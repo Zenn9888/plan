@@ -1,133 +1,119 @@
-import os
-import re
-import requests
-import googlemaps
+import os, re, googlemaps, requests
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
 from linebot.models import *
 from pymongo import MongoClient
 from urllib.parse import urlparse, parse_qs
-from dotenv import load_dotenv
 
-# 載入環境變數
-load_dotenv()
 app = Flask(__name__)
+
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 MONGO_URI = os.getenv("MONGO_URI")
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
-mongo_client = MongoClient(MONGO_URI)
-db = mongo_client["line_bot"]
-locations_col = db["locations"]
+client = MongoClient(MONGO_URI)
+db = client["line_bot"]
+locations = db["locations"]
 
-# 轉換 Google Maps 短網址為地址
-def resolve_gmaps_url(url):
+ADD_KEYWORDS = ["新增", "加入", "add", "地點", "+", "加", "增"]
+DELETE_KEYWORDS = ["刪除", "remove", "delete", "減少"]
+CLEAR_KEYWORDS = ["清空", "清除", "全部刪除", "reset"]
+
+def find_lat_lng(name):
     try:
-        response = requests.get(url, allow_redirects=True, timeout=10)
-        return response.url
+        if "maps.app.goo.gl" in name:
+            res = requests.get(name, allow_redirects=True, timeout=5)
+            name = res.url.split("/place/")[-1].split("/")[0].replace("+", " ")
+        result = gmaps.geocode(name)
+        if result:
+            address = result[0]["formatted_address"]
+            lat = result[0]["geometry"]["location"]["lat"]
+            lng = result[0]["geometry"]["location"]["lng"]
+            return address, lat, lng
+        return None, None, None
     except:
-        return None
+        return None, None, None
 
-# Flex 小卡提示
-def send_flex_guide(reply_token):
-    flex = {
-        "type": "bubble",
-        "hero": {
-            "type": "image",
-            "url": "https://maps.gstatic.com/tactile/basepage/pegman_sherlock.png",
-            "size": "full",
-            "aspectRatio": "20:13",
-            "aspectMode": "cover"
-        },
-        "body": {
-            "type": "box",
-            "layout": "vertical",
-            "contents": [
-                {"type": "text", "text": "地點排序小幫手", "weight": "bold", "size": "lg"},
-                {"type": "text", "text": "請輸入：\n🔹 新增 台北101\n🔹 刪除 XX\n🔹 排序地點", "wrap": True, "margin": "md", "size": "sm"}
+def send_flex_hint(reply_token):
+    bubble = BubbleContainer(
+        direction="ltr",
+        body=BoxComponent(
+            layout="vertical",
+            contents=[
+                TextComponent(text="📌 功能提示", weight="bold", size="lg"),
+                TextComponent(text="➕ 新增地點：新增 台北101", size="sm"),
+                TextComponent(text="➖ 刪除地點：刪除 台北101", size="sm"),
+                TextComponent(text="🧹 清空所有：清空", size="sm"),
+                TextComponent(text="🧭 地點排序：排序", size="sm"),
             ]
-        }
-    }
-    line_bot_api.reply_message(reply_token, FlexSendMessage("功能說明", flex))
+        )
+    )
+    message = FlexSendMessage(alt_text="功能提示", contents=bubble)
+    line_bot_api.reply_message(reply_token, message)
 
-@app.route("/", methods=['GET'])
-def home():
-    return "Line Bot is running!"
-
-@app.route("/callback", methods=['POST'])
+@app.route("/callback", methods=["POST"])
 def callback():
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers["X-Line-Signature"]
     body = request.get_data(as_text=True)
     try:
         handler.handle(body, signature)
-    except Exception as e:
+    except InvalidSignatureError:
         abort(400)
-    return 'OK'
-
-def extract_location_from_text(text):
-    url_match = re.search(r'https://maps\.app\.goo\.gl/\S+', text)
-    if url_match:
-        final_url = resolve_gmaps_url(url_match.group())
-        if final_url:
-            q = parse_qs(urlparse(final_url).query)
-            return final_url.split('/place/')[1].split('/')[0].replace('+', ' ')
-    return text.strip().split(maxsplit=1)[-1]
+    return "OK"
 
 @handler.add(MessageEvent, message=TextMessage)
-def handle_text(event):
-    user_id = event.source.user_id
-    msg = event.message.text.strip()
+def handle_message(event):
+    user_message = event.message.text.strip()
+    reply_token = event.reply_token
 
-    if any(key in msg for key in ["新增", "加入", "+", "加", "增", "地點", "add"]):
-        name = extract_location_from_text(msg)
-        try:
-            geocode_result = gmaps.geocode(name)
-            if not geocode_result:
-                line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ 找不到該地點"))
-                return
-            loc = geocode_result[0]["geometry"]["location"]
-            address = geocode_result[0]["formatted_address"]
-            locations_col.insert_one({"user": user_id, "name": name, "address": address, "lat": loc["lat"], "lng": loc["lng"]})
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"✅ 已新增：{name}"))
-        except Exception:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ 地點加入失敗"))
+    # 清空功能
+    if any(key in user_message for key in CLEAR_KEYWORDS):
+        locations.delete_many({})
+        line_bot_api.reply_message(reply_token, TextSendMessage(text="✅ 所有地點已清空"))
         return
 
-    if any(key in msg for key in ["刪除", "移除", "delete", "del", "-", "刪", "移"]):
-        keyword = msg.strip().split(maxsplit=1)[-1]
-        result = locations_col.delete_many({"user": user_id, "name": {"$regex": keyword}})
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=f"🗑️ 已刪除 {result.deleted_count} 筆地點"))
-        return
-
-    if "排序" in msg or "路線" in msg:
-        records = list(locations_col.find({"user": user_id}))
-        if len(records) < 2:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="⚠️ 請先新增兩個以上地點"))
+    # 地點排序
+    if "排序" in user_message:
+        locs = list(locations.find())
+        if not locs:
+            line_bot_api.reply_message(reply_token, TextSendMessage(text="❗目前沒有任何地點"))
             return
-        waypoints = [(r["lat"], r["lng"]) for r in records]
-        names = [r["name"] for r in records]
-        try:
-            route = gmaps.directions(origin=waypoints[0],
-                                     destination=waypoints[-1],
-                                     waypoints=waypoints[1:-1],
-                                     mode="driving")[0]
-            steps = [leg["start_address"] for leg in route["legs"]] + [route["legs"][-1]["end_address"]]
-            reply = "📍 最佳路線排序：\n" + "\n".join([f"{i+1}. {names[i]}" for i in range(len(names))])
-            map_url = f"https://www.google.com/maps/dir/" + "/".join([f'{lat},{lng}' for lat, lng in waypoints])
-            reply += f"\n\n🗺️ 路線圖：{map_url}"
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
-        except:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text="❌ 路線規劃失敗"))
+        waypoints = [f"{l['lat']},{l['lng']}" for l in locs]
+        names = [l["name"] for l in locs]
+        url = f"https://www.google.com/maps/dir/{'/'.join(waypoints)}"
+        text = "📍 地點順序：\n" + "\n".join(f"{i+1}. {name}" for i, name in enumerate(names)) + f"\n🧭 地圖路線：{url}"
+        line_bot_api.reply_message(reply_token, TextSendMessage(text=text))
         return
 
-    if msg in ["help","說明", "使用說明"]:
-        send_flex_guide(event.reply_token)
-    
+    # 新增地點
+    for key in ADD_KEYWORDS:
+        if user_message.startswith(key):
+            name = user_message[len(key):].strip()
+            address, lat, lng = find_lat_lng(name)
+            if address:
+                locations.insert_one({"name": name, "address": address, "lat": lat, "lng": lng})
+                line_bot_api.reply_message(reply_token, TextSendMessage(text=f"✅ 已加入：{name} ({address})"))
+            else:
+                line_bot_api.reply_message(reply_token, TextSendMessage(text="❗找不到該地點"))
+            return
+
+    # 刪除地點
+    for key in DELETE_KEYWORDS:
+        if user_message.startswith(key):
+            name = user_message[len(key):].strip()
+            result = locations.delete_one({"name": name})
+            if result.deleted_count > 0:
+                line_bot_api.reply_message(reply_token, TextSendMessage(text=f"🗑️ 已刪除地點：{name}"))
+            else:
+                line_bot_api.reply_message(reply_token, TextSendMessage(text="❗找不到要刪除的地點"))
+            return
+
+    send_flex_hint(reply_token)
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
