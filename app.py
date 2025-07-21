@@ -1,119 +1,108 @@
-import os, re, googlemaps, requests
+# app.py（整合地點備註與地點清單功能 + LINE 選單）
+import os
 from flask import Flask, request, abort
 from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
 from linebot.models import *
 from pymongo import MongoClient
-from urllib.parse import urlparse, parse_qs
+import googlemaps
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 
+# LINE Bot 設定
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
-GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-MONGO_URI = os.getenv("MONGO_URI")
-
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
-gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
-client = MongoClient(MONGO_URI)
-db = client["line_bot"]
-locations = db["locations"]
 
-ADD_KEYWORDS = ["新增", "加入", "add", "地點", "+", "加", "增"]
-DELETE_KEYWORDS = ["刪除", "remove", "delete", "減少"]
-CLEAR_KEYWORDS = ["清空", "清除", "全部刪除", "reset"]
+# Google Maps 設定
+gmaps = googlemaps.Client(key=os.getenv("GOOGLE_MAPS_API_KEY"))
 
-def find_lat_lng(name):
-    try:
-        if "maps.app.goo.gl" in name:
-            res = requests.get(name, allow_redirects=True, timeout=5)
-            name = res.url.split("/place/")[-1].split("/")[0].replace("+", " ")
-        result = gmaps.geocode(name)
-        if result:
-            address = result[0]["formatted_address"]
-            lat = result[0]["geometry"]["location"]["lat"]
-            lng = result[0]["geometry"]["location"]["lng"]
-            return address, lat, lng
-        return None, None, None
-    except:
-        return None, None, None
+# MongoDB 設定
+client = MongoClient(os.getenv("MONGODB_URI"))
+db = client["linebot"]
+col = db["locations"]
 
-def send_flex_hint(reply_token):
-    bubble = BubbleContainer(
-        direction="ltr",
-        body=BoxComponent(
-            layout="vertical",
-            contents=[
-                TextComponent(text="📌 功能提示", weight="bold", size="lg"),
-                TextComponent(text="➕ 新增地點：新增 台北101", size="sm"),
-                TextComponent(text="➖ 刪除地點：刪除 台北101", size="sm"),
-                TextComponent(text="🧹 清空所有：清空", size="sm"),
-                TextComponent(text="🧭 地點排序：排序", size="sm"),
-            ]
-        )
+# FlexMessage 選單
+rich_menu_id = None
+
+def setup_rich_menu():
+    global rich_menu_id
+    menus = line_bot_api.get_rich_menu_list()
+    if menus:
+        rich_menu_id = menus[0].rich_menu_id
+        return
+
+    rich_menu = RichMenu(
+        size=RichMenuSize(width=2500, height=843),
+        selected=True,
+        name="主選單",
+        chat_bar_text="打開選單",
+        areas=[
+            RichMenuArea(
+                bounds=RichMenuBounds(x=0, y=0, width=833, height=843),
+                action=MessageAction(label="新增地點", text="新增 台北101 晚餐")
+            ),
+            RichMenuArea(
+                bounds=RichMenuBounds(x=834, y=0, width=833, height=843),
+                action=MessageAction(label="查看清單", text="地點清單")
+            ),
+            RichMenuArea(
+                bounds=RichMenuBounds(x=1667, y=0, width=833, height=843),
+                action=MessageAction(label="清空地點", text="清空")
+            )
+        ]
     )
-    message = FlexSendMessage(alt_text="功能提示", contents=bubble)
-    line_bot_api.reply_message(reply_token, message)
+    rich_menu_id = line_bot_api.create_rich_menu(rich_menu=rich_menu)
+    with open("menu.jpg", 'rb') as f:
+        line_bot_api.set_rich_menu_image(rich_menu_id, "image/jpeg", f)
+    line_bot_api.set_default_rich_menu(rich_menu_id)
 
-@app.route("/callback", methods=["POST"])
+@app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers["X-Line-Signature"]
+    signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
     try:
         handler.handle(body, signature)
-    except InvalidSignatureError:
+    except:
         abort(400)
-    return "OK"
+    return 'OK'
 
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
-    user_message = event.message.text.strip()
-    reply_token = event.reply_token
+    user_id = event.source.user_id
+    msg = event.message.text.strip()
 
-    # 清空功能
-    if any(key in user_message for key in CLEAR_KEYWORDS):
-        locations.delete_many({})
-        line_bot_api.reply_message(reply_token, TextSendMessage(text="✅ 所有地點已清空"))
-        return
-
-    # 地點排序
-    if "排序" in user_message:
-        locs = list(locations.find())
-        if not locs:
-            line_bot_api.reply_message(reply_token, TextSendMessage(text="❗目前沒有任何地點"))
+    if msg.startswith("新增") or msg.startswith("加入") or msg.startswith("add"):
+        parts = msg.split(" ", 2)
+        if len(parts) < 2:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage("請提供要新增的地點名稱。"))
             return
-        waypoints = [f"{l['lat']},{l['lng']}" for l in locs]
-        names = [l["name"] for l in locs]
-        url = f"https://www.google.com/maps/dir/{'/'.join(waypoints)}"
-        text = "📍 地點順序：\n" + "\n".join(f"{i+1}. {name}" for i, name in enumerate(names)) + f"\n🧭 地圖路線：{url}"
-        line_bot_api.reply_message(reply_token, TextSendMessage(text=text))
-        return
-
-    # 新增地點
-    for key in ADD_KEYWORDS:
-        if user_message.startswith(key):
-            name = user_message[len(key):].strip()
-            address, lat, lng = find_lat_lng(name)
-            if address:
-                locations.insert_one({"name": name, "address": address, "lat": lat, "lng": lng})
-                line_bot_api.reply_message(reply_token, TextSendMessage(text=f"✅ 已加入：{name} ({address})"))
-            else:
-                line_bot_api.reply_message(reply_token, TextSendMessage(text="❗找不到該地點"))
+        place = parts[1]
+        note = parts[2] if len(parts) > 2 else ""
+        geocode = gmaps.geocode(place)
+        if not geocode:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage("找不到該地點。"))
             return
+        loc = geocode[0]['geometry']['location']
+        col.insert_one({"user_id": user_id, "name": place, "note": note, "lat": loc['lat'], "lng": loc['lng']})
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(f"✅ 已加入：{place} ({note})"))
 
-    # 刪除地點
-    for key in DELETE_KEYWORDS:
-        if user_message.startswith(key):
-            name = user_message[len(key):].strip()
-            result = locations.delete_one({"name": name})
-            if result.deleted_count > 0:
-                line_bot_api.reply_message(reply_token, TextSendMessage(text=f"🗑️ 已刪除地點：{name}"))
-            else:
-                line_bot_api.reply_message(reply_token, TextSendMessage(text="❗找不到要刪除的地點"))
+    elif msg in ["地點清單", "查看清單"]:
+        data = list(col.find({"user_id": user_id}))
+        if not data:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage("尚未加入任何地點。"))
             return
+        result = "📍 目前清單：\n\n" + "\n".join([f"{i+1}. {d['name']} - {d.get('note', '')}" for i, d in enumerate(data)])
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(result))
 
-    send_flex_hint(reply_token)
+    elif msg in ["清空", "全部刪除", "reset"]:
+        col.delete_many({"user_id": user_id})
+        line_bot_api.reply_message(event.reply_token, TextSendMessage("✅ 已清空所有地點。"))
 
+    
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    setup_rich_menu()
+    app.run(debug=True)
