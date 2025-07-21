@@ -78,10 +78,6 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(reply))
         return
 
-    # 預設回覆
-    line_bot_api.reply_message(
-        event.reply_token, TextSendMessage(text="請輸入：「增加地點 + 地名」")
-    )
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
