@@ -1,0 +1,22 @@
+{
+  "type": "bubble",
+  "body": {
+    "type": "box",
+    "layout": "vertical",
+    "contents": [
+      {
+        "type": "text",
+        "text": "📍 選擇指令",
+        "weight": "bold",
+        "size": "lg"
+      },
+      {
+        "type": "text",
+        "text": "輸入「新增 台北101」加入地點\n輸入「排序」查看路線\n輸入「地點清單」查看地點",
+        "wrap": true,
+        "margin": "md",
+        "size": "sm"
+      }
+    ]
+  }
+}
