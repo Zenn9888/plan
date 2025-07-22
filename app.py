@@ -3,10 +3,9 @@ import re
 import json
 from flask import Flask, request, abort
 from linebot.v3.messaging import MessagingApi, ReplyMessageRequest
+from linebot.v3.messaging.models import TextMessage, FlexMessage
 from linebot.v3.webhook import WebhookHandler
-from linebot.v3.messaging.models import (
-    MessageEvent, TextMessage, FlexMessage
-)
+from linebot.v3.webhook.models import MessageEvent
 import googlemaps
 from pymongo import MongoClient
 from utils import (
