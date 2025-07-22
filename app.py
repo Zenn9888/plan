@@ -1,122 +1,151 @@
-# app.py（支援短網址地點 + rich menu + 備註 + 清單）
 import os
-import requests
-from flask import Flask, request, abort
-from linebot import LineBotApi, WebhookHandler
-from linebot.models import *
-from pymongo import MongoClient
+import re
+import json
 import googlemaps
+from flask import Flask, request, abort
+from pymongo import MongoClient
 from dotenv import load_dotenv
+from linebot import LineBotApi, WebhookHandler
+from linebot.models import (
+    MessageEvent, TextMessage, TextSendMessage,
+    FlexSendMessage, RichMenu, RichMenuArea, RichMenuSize,
+    URIAction, PostbackAction
+)
 
+# ✅ 載入環境變數
 load_dotenv()
-
-app = Flask(__name__)
-
-# LINE Bot 設定
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+
+# ✅ 初始化
+app = Flask(__name__)
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
-
-# Google Maps 設定
-gmaps = googlemaps.Client(key=os.getenv("GOOGLE_MAPS_API_KEY"))
-
-# MongoDB 設定
-client = MongoClient(os.getenv("MONGODB_URI"))
+gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
+client = MongoClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
 db = client["linebot"]
-col = db["locations"]
+locations_col = db["locations"]
 
-# Rich Menu 設定
-def setup_rich_menu():
-    menus = line_bot_api.get_rich_menu_list()
-    if menus:
-        rich_menu_id = menus[0].rich_menu_id
-        line_bot_api.set_default_rich_menu(rich_menu_id)
-        return
+# ✅ 預設首頁（解決 404）
+@app.route("/")
+def index():
+    return "Line Bot is running!"
 
-    rich_menu = RichMenu(
-        size=RichMenuSize(width=2500, height=843),
-        selected=True,
-        name="主選單",
-        chat_bar_text="打開選單",
-        areas=[
-            RichMenuArea(bounds=RichMenuBounds(x=0, y=0, width=833, height=843),
-                         action=MessageAction(label="新增地點", text="新增 台北101 晚餐")),
-            RichMenuArea(bounds=RichMenuBounds(x=834, y=0, width=833, height=843),
-                         action=MessageAction(label="查看清單", text="地點清單")),
-            RichMenuArea(bounds=RichMenuBounds(x=1667, y=0, width=833, height=843),
-                         action=MessageAction(label="清空地點", text="清空"))
-        ]
-    )
-    rich_menu_id = line_bot_api.create_rich_menu(rich_menu=rich_menu)
-    with open("menu.jpg", 'rb') as f:
-        line_bot_api.set_rich_menu_image(rich_menu_id, "image/jpeg", f)
-    line_bot_api.set_default_rich_menu(rich_menu_id)
-
-@app.route("/callback", methods=['POST'])
+# ✅ Webhook 接收事件
+@app.route("/callback", methods=["POST"])
 def callback():
-    signature = request.headers['X-Line-Signature']
+    signature = request.headers["X-Line-Signature"]
     body = request.get_data(as_text=True)
+
     try:
         handler.handle(body, signature)
-    except:
+    except Exception as e:
+        print("❌ Webhook Error:", e)
         abort(400)
-    return 'OK'
 
+    return "OK"
+
+# ✅ 處理訊息事件
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     msg = event.message.text.strip()
 
-    if msg.startswith(("新增", "加入", "add")):
-        parts = msg.split(" ", 2)
-        if len(parts) < 2:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage("請提供要新增的地點名稱。"))
-            return
-        place = parts[1]
-        note = parts[2] if len(parts) > 2 else ""
+    if msg.lower() in ["reset", "清除", "清空", "全部刪除"]:
+        locations_col.delete_many({"user_id": user_id})
+        line_bot_api.reply_message(event.reply_token, TextSendMessage("✅ 已清除所有地點。"))
+        return
 
-        # ✅ 處理 maps.app.goo.gl 短網址
-        if place.startswith("https://maps.app.goo.gl"):
-            try:
-                r = requests.get(place, allow_redirects=True)
-                if r.status_code == 200:
-                    real_url = r.url
-                    if "/place/" in real_url:
-                        place = real_url.split("/place/")[1].split("/")[0]
-                        place = requests.utils.unquote(place)
-            except Exception as e:
-                print("短網址解析失敗:", e)
-                line_bot_api.reply_message(event.reply_token, TextSendMessage("短網址解析失敗，請改用地點名稱。"))
-                return
+    if msg.startswith("新增 "):
+        keyword = msg[3:].strip()
+        name, lat, lng, address = get_location_info(keyword)
 
-        geocode = gmaps.geocode(place)
-        if not geocode:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage("找不到該地點。"))
+        if not name:
+            line_bot_api.reply_message(event.reply_token, TextSendMessage("❌ 找不到地點，請確認輸入。"))
             return
-        loc = geocode[0]['geometry']['location']
-        col.insert_one({
+
+        # ✅ 儲存 MongoDB
+        locations_col.insert_one({
             "user_id": user_id,
-            "name": place,
-            "note": note,
-            "lat": loc['lat'],
-            "lng": loc['lng']
+            "input": keyword,
+            "name": name,
+            "lat": lat,
+            "lng": lng,
+            "address": address
         })
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(f"✅ 已加入：{place} ({note})"))
 
-    elif msg in ["地點清單", "查看清單"]:
-        data = list(col.find({"user_id": user_id}))
-        if not data:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage("尚未加入任何地點。"))
-            return
-        result = "📍 目前清單：\n\n" + "\n".join(
-            [f"{i+1}. {d['name']} - {d.get('note', '')}" for i, d in enumerate(data)])
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(result))
+        reply = f"📍 已新增地點：{keyword}\n➡️ 解析：{name}"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(reply))
+        return
 
-    elif msg in ["清空", "全部刪除", "reset"]:
-        col.delete_many({"user_id": user_id})
-        line_bot_api.reply_message(event.reply_token, TextSendMessage("✅ 已清空所有地點。"))
+    # 預設提示
+    line_bot_api.reply_message(event.reply_token, FlexSendMessage(
+        alt_text="Line Bot 功能選單",
+        contents={
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {"type": "text", "text": "請輸入地點關鍵字", "weight": "bold", "size": "lg"},
+                    {"type": "text", "text": "例如：新增 台北101", "size": "sm", "color": "#888888"}
+                ]
+            }
+        }
+    ))
 
+# ✅ 地點解析（支援 Maps 短網址與關鍵字）
+def get_location_info(keyword):
+    try:
+        if "maps.app.goo.gl" in keyword:
+            resolved = requests.get(keyword, allow_redirects=True, timeout=5).url
+            match = re.search(r"/place/([^/]+)", resolved)
+            if match:
+                keyword = match.group(1).replace("+", " ")
+
+        result = gmaps.geocode(keyword)
+        if not result:
+            return None, None, None, None
+
+        name = result[0].get("formatted_address")
+        location = result[0]["geometry"]["location"]
+        return name, location["lat"], location["lng"], name
+    except Exception as e:
+        print("地點查詢失敗:", e)
+        return None, None, None, None
+
+# ✅ RichMenu 建立與綁定（每次執行都檢查）
+def create_rich_menu():
+    richmenus = line_bot_api.get_rich_menu_list()
+    if richmenus:
+        return
+
+    menu = RichMenu(
+        size=RichMenuSize(width=2500, height=843),
+        selected=True,
+        name="MainMenu",
+        chat_bar_text="≡ 功能選單",
+        areas=[
+            RichMenuArea(
+                bounds={"x": 0, "y": 0, "width": 1250, "height": 843},
+                action=PostbackAction(label="新增地點", data="add")
+            ),
+            RichMenuArea(
+                bounds={"x": 1250, "y": 0, "width": 1250, "height": 843},
+                action=PostbackAction(label="清空", data="clear")
+            ),
+        ]
+    )
+
+    rich_menu_id = line_bot_api.create_rich_menu(menu)
+    with open("menu.png", "rb") as f:
+        line_bot_api.set_rich_menu_image(rich_menu_id, "image/png", f)
+
+    line_bot_api.set_default_rich_menu(rich_menu_id)
+    print("✅ RichMenu 已建立並設為預設")
+
+# ✅ 啟動
 if __name__ == "__main__":
-    setup_rich_menu()
-    app.run(debug=True)
+    create_rich_menu()
+    app.run(host="0.0.0.0", port=10000)
