@@ -54,6 +54,7 @@ def callback():
         handler.handle(body, signature)
     except Exception as e:
         print("❌ Webhook Error:", e)
+        traceback.print_exc()
         abort(400)
 
     return "OK"
