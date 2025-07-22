@@ -1,14 +1,12 @@
 import os
 import re
+import json
 from flask import Flask, request, abort
+from linebot.v3.messaging import MessagingApi, Configuration, ApiClient, ReplyMessageRequest
+from linebot.v3.messaging.models import TextMessage, FlexMessage
 from linebot.v3.webhook import WebhookHandler
 from linebot.v3.webhooks import MessageEvent
-from linebot.v3.messaging import (
-    MessagingApi, Configuration, ReplyMessageRequest
-)
-from linebot.v3.messaging.models import (
-    TextMessage, TextMessageContent, FlexMessage
-)
+
 import googlemaps
 from pymongo import MongoClient
 from utils import (
@@ -16,6 +14,7 @@ from utils import (
     extract_location_from_url, create_static_map_url,
     show_location_list, clear_locations, add_location
 )
+
 
 # ✅ 初始化 Flask
 app = Flask(__name__)
@@ -42,11 +41,13 @@ collection = db["locations"]
 def callback():
     signature = request.headers.get("x-line-signature")
     body = request.get_data(as_text=True)
+
     try:
         handler.handle(body, signature)
     except Exception as e:
         print("Webhook Error:", e)
         abort(400)
+
     return "OK"
 
 # ✅ 處理訊息事件
