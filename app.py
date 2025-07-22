@@ -15,6 +15,7 @@ from utils import (
     show_location_list, clear_locations, add_location
 )
 
+
 # ✅ 初始化 Flask
 app = Flask(__name__)
 
