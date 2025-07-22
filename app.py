@@ -2,7 +2,7 @@ import os
 import re
 from flask import Flask, request, abort
 from linebot.v3.webhook import WebhookHandler
-from linebot.v3.webhook.models import Event
+from linebot.v3.webhook import WebhookHandler, Event
 from linebot.v3.messaging import MessagingApi, Configuration, ReplyMessageRequest
 from linebot.v3.messaging.models import TextMessage, FlexMessage
 import googlemaps
