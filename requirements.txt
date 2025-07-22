@@ -1,6 +1,5 @@
-flask
-line-bot-sdk==3.3.0
-python-dotenv
-pymongo
-requests
-googlemaps
+line-bot-sdk==3.4.0
+Flask==2.3.3
+googlemaps==4.10.0
+requests==2.32.3
+pymongo==4.7.2

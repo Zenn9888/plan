@@ -1,151 +1,103 @@
 import os
 import re
 import json
-import googlemaps
 from flask import Flask, request, abort
-from pymongo import MongoClient
-from dotenv import load_dotenv
 from linebot import LineBotApi, WebhookHandler
-from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage,
-    FlexSendMessage, RichMenu, RichMenuArea, RichMenuSize,
-    URIAction, PostbackAction
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, FlexSendMessage
+import googlemaps
+from pymongo import MongoClient
+from urllib.parse import urlparse
+from utils import (
+    create_flex_message, get_coordinates, get_sorted_route_url,
+    extract_location_from_url, create_static_map_url,
+    show_location_list, clear_locations, add_location
 )
 
-# ✅ 載入環境變數
-load_dotenv()
+app = Flask(__name__)
+
+# 讀取環境變數
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 
-# ✅ 初始化
-app = Flask(__name__)
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 client = MongoClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
 db = client["linebot"]
-locations_col = db["locations"]
+collection = db["locations"]
 
-# ✅ 預設首頁（解決 404）
-@app.route("/")
-def index():
-    return "Line Bot is running!"
+# 初始化 RichMenu（只需執行一次）
+from richmenu_setup import setup_rich_menu
+setup_rich_menu(CHANNEL_ACCESS_TOKEN)
 
-# ✅ Webhook 接收事件
-@app.route("/callback", methods=["POST"])
+@app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers["X-Line-Signature"]
+    signature = request.headers['X-Line-Signature']
     body = request.get_data(as_text=True)
 
     try:
         handler.handle(body, signature)
     except Exception as e:
-        print("❌ Webhook Error:", e)
+        print("Webhook Error:", e)
         abort(400)
+    return 'OK'
 
-    return "OK"
-
-# ✅ 處理訊息事件
 @handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     user_id = event.source.user_id
     msg = event.message.text.strip()
 
-    if msg.lower() in ["reset", "清除", "清空", "全部刪除"]:
-        locations_col.delete_many({"user_id": user_id})
-        line_bot_api.reply_message(event.reply_token, TextSendMessage("✅ 已清除所有地點。"))
+    # 🔹 清單
+    if re.search(r"(地點清單|行程|目前地點)", msg):
+        reply = show_location_list(user_id, collection)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
         return
 
-    if msg.startswith("新增 "):
-        keyword = msg[3:].strip()
-        name, lat, lng, address = get_location_info(keyword)
+    # 🔹 清空
+    if re.search(r"(清空|全部刪除|reset)", msg):
+        reply = clear_locations(user_id, collection)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return
 
-        if not name:
-            line_bot_api.reply_message(event.reply_token, TextSendMessage("❌ 找不到地點，請確認輸入。"))
-            return
+    # 🔹 排序
+    if re.search(r"(排序|路線|最短路徑)", msg):
+        docs = list(collection.find({"user_id": user_id}))
+        if len(docs) < 2:
+            reply = "請先新增至少兩個地點再排序。"
+        else:
+            locations = [(doc["name"], doc["lat"], doc["lng"]) for doc in docs]
+            reply = get_sorted_route_url(locations, GOOGLE_API_KEY)
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return
 
-        # ✅ 儲存 MongoDB
-        locations_col.insert_one({
-            "user_id": user_id,
-            "input": keyword,
-            "name": name,
-            "lat": lat,
-            "lng": lng,
-            "address": address
-        })
+    # 🔹 Google Maps 短網址
+    if "maps.app.goo.gl" in msg:
+        place = extract_location_from_url(msg, gmaps)
+        if place:
+            reply = add_location(user_id, place["name"], place["lat"], place["lng"], collection)
+        else:
+            reply = "無法解析 Google Maps 短網址中的地點。"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
+        return
 
-        reply = f"📍 已新增地點：{keyword}\n➡️ 解析：{name}"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(reply))
+    # 🔹 加地點（模糊搜尋）
+    if re.search(r"(新增|加入|add|地點)", msg):
+        query = re.sub(r"(新增|加入|add|地點)", "", msg).strip()
+        if query:
+            result = get_coordinates(query, gmaps)
+            if result:
+                reply = add_location(user_id, query, result["lat"], result["lng"], collection)
+            else:
+                reply = f"找不到地點「{query}」。"
+        else:
+            reply = "請輸入地點名稱，例如：新增 台北101"
+        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
         return
 
     # 預設提示
-    line_bot_api.reply_message(event.reply_token, FlexSendMessage(
-        alt_text="Line Bot 功能選單",
-        contents={
-            "type": "bubble",
-            "body": {
-                "type": "box",
-                "layout": "vertical",
-                "contents": [
-                    {"type": "text", "text": "請輸入地點關鍵字", "weight": "bold", "size": "lg"},
-                    {"type": "text", "text": "例如：新增 台北101", "size": "sm", "color": "#888888"}
-                ]
-            }
-        }
-    ))
+    flex = create_flex_message()
+    line_bot_api.reply_message(event.reply_token, flex)
 
-# ✅ 地點解析（支援 Maps 短網址與關鍵字）
-def get_location_info(keyword):
-    try:
-        if "maps.app.goo.gl" in keyword:
-            resolved = requests.get(keyword, allow_redirects=True, timeout=5).url
-            match = re.search(r"/place/([^/]+)", resolved)
-            if match:
-                keyword = match.group(1).replace("+", " ")
-
-        result = gmaps.geocode(keyword)
-        if not result:
-            return None, None, None, None
-
-        name = result[0].get("formatted_address")
-        location = result[0]["geometry"]["location"]
-        return name, location["lat"], location["lng"], name
-    except Exception as e:
-        print("地點查詢失敗:", e)
-        return None, None, None, None
-
-# ✅ RichMenu 建立與綁定（每次執行都檢查）
-def create_rich_menu():
-    richmenus = line_bot_api.get_rich_menu_list()
-    if richmenus:
-        return
-
-    menu = RichMenu(
-        size=RichMenuSize(width=2500, height=843),
-        selected=True,
-        name="MainMenu",
-        chat_bar_text="≡ 功能選單",
-        areas=[
-            RichMenuArea(
-                bounds={"x": 0, "y": 0, "width": 1250, "height": 843},
-                action=PostbackAction(label="新增地點", data="add")
-            ),
-            RichMenuArea(
-                bounds={"x": 1250, "y": 0, "width": 1250, "height": 843},
-                action=PostbackAction(label="清空", data="clear")
-            ),
-        ]
-    )
-
-    rich_menu_id = line_bot_api.create_rich_menu(menu)
-    with open("menu.png", "rb") as f:
-        line_bot_api.set_rich_menu_image(rich_menu_id, "image/png", f)
-
-    line_bot_api.set_default_rich_menu(rich_menu_id)
-    print("✅ RichMenu 已建立並設為預設")
-
-# ✅ 啟動
 if __name__ == "__main__":
-    create_rich_menu()
-    app.run(host="0.0.0.0", port=10000)
+    app.run()
