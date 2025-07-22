@@ -1,70 +1,59 @@
 import os
 import re
 import json
-import traceback
-
+import googlemaps
 from flask import Flask, request, abort
+from pymongo import MongoClient
 
-# ✅ LINE SDK v3 正確匯入與初始化
 from linebot.v3.messaging import (
-    Configuration, MessagingApi, ApiClient, ReplyMessageRequest
+    Configuration, MessagingApi, ReplyMessageRequest
 )
 from linebot.v3.messaging.models import TextMessage, FlexMessage
 from linebot.v3.webhook import WebhookHandler
 from linebot.v3.webhooks import MessageEvent
 from linebot.v3.webhooks.models import TextMessageContent
 
-import googlemaps
-from pymongo import MongoClient
-
 from utils import (
-    create_flex_message, get_coordinates, get_sorted_route_url,
-    extract_location_from_url, create_static_map_url,
-    show_location_list, clear_locations, add_location
+    get_coordinates, get_sorted_route_url, extract_location_from_url,
+    create_static_map_url
 )
 
-# ✅ 初始化 Flask
 app = Flask(__name__)
 
 # ✅ 環境變數
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-MONGO_URL = os.getenv("MONGO_URL") or os.getenv("MONGO_URI") or "mongodb://localhost:27017"
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 
-print("✅ CHANNEL_ACCESS_TOKEN:", CHANNEL_ACCESS_TOKEN)
-print("✅ CHANNEL_SECRET:", CHANNEL_SECRET)
-print("✅ GOOGLE_MAPS_API_KEY:", GOOGLE_API_KEY)
-print("✅ MONGO_URL:", MONGO_URL)
-
-# ✅ 正確初始化 LINE Bot SDK v3
+# ✅ LINE Bot 初始化
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-api_client = ApiClient(configuration)
-line_bot_api = MessagingApi(api_client)
+line_bot_api = MessagingApi(configuration)
 handler = WebhookHandler(CHANNEL_SECRET)
 
-# ✅ 初始化 Google Maps 與 MongoDB
+# ✅ MongoDB & Google Maps
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 client = MongoClient(MONGO_URL)
-db = client["linebot"]
-collection = db["locations"]
+collection = client["linebot"]["locations"]
 
-# ✅ Webhook 路由
+# ✅ webhook
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("x-line-signature")
     body = request.get_data(as_text=True)
-
     try:
         handler.handle(body, signature)
     except Exception as e:
         print("❌ Webhook Error:", e)
-        traceback.print_exc()
         abort(400)
-
     return "OK"
 
-# ✅ 處理訊息
+# ✅ 指令別名
+ADD_ALIASES = ["新增", "加入", "增加", "add", "+"]
+DELETE_REGEX = r"(刪除|移除|-|移|刪)\s*(\d+)"
+COMMENT_REGEX = r"(註解|備註)\s*(\d+)\s*(.+)"
+
+# ✅ 主訊息處理
 @handler.add(MessageEvent)
 def handle_message(event):
     message = event.message
@@ -75,11 +64,45 @@ def handle_message(event):
 
     msg = message.text.strip()
 
-    if re.search(r"(地點清單|行程|目前地點)", msg):
-        reply = show_location_list(user_id, collection)
+    if re.search(r"(地點清單|目前地點|行程)", msg):
+        docs = list(collection.find({"user_id": user_id}))
+        if not docs:
+            reply = "目前尚未加入任何地點。"
+        else:
+            reply = "📍 目前地點清單：\n"
+            for i, doc in enumerate(docs, 1):
+                note = f"（{doc['note']}）" if "note" in doc else ""
+                reply += f"{i}. {doc['name']}{note}\n"
 
     elif re.search(r"(清空|全部刪除|reset)", msg):
-        reply = clear_locations(user_id, collection)
+        reply = "⚠️ 你確定要清空所有地點嗎？\n請回覆：「確認清空」來執行。"
+
+    elif msg.strip() == "確認清空":
+        collection.delete_many({"user_id": user_id})
+        reply = "✅ 所有地點已清空。"
+
+    elif match := re.match(DELETE_REGEX, msg):
+        index = int(match.group(2)) - 1
+        docs = list(collection.find({"user_id": user_id}))
+        if 0 <= index < len(docs):
+            name = docs[index]["name"]
+            collection.delete_one({"_id": docs[index]["_id"]})
+            reply = f"🗑️ 已刪除第 {index+1} 個地點：{name}"
+        else:
+            reply = "⚠️ 編號錯誤，請確認清單中有此地點。"
+
+    elif match := re.match(COMMENT_REGEX, msg):
+        index = int(match.group(2)) - 1
+        comment = match.group(3).strip()
+        docs = list(collection.find({"user_id": user_id}))
+        if 0 <= index < len(docs):
+            collection.update_one(
+                {"_id": docs[index]["_id"]},
+                {"$set": {"note": comment}}
+            )
+            reply = f"📝 已註解第 {index+1} 個地點為：「{comment}」"
+        else:
+            reply = "⚠️ 編號錯誤，請確認清單中有此地點。"
 
     elif re.search(r"(排序|路線|最短路徑)", msg):
         docs = list(collection.find({"user_id": user_id}))
@@ -92,39 +115,59 @@ def handle_message(event):
     elif "maps.app.goo.gl" in msg:
         place = extract_location_from_url(msg, gmaps)
         if place:
-            reply = add_location(user_id, place["name"], place["lat"], place["lng"], collection)
+            collection.insert_one({
+                "user_id": user_id,
+                "name": place["name"],
+                "lat": place["lat"],
+                "lng": place["lng"]
+            })
+            reply = f"✅ 已新增地點：{place['name']}"
         else:
-            reply = "無法解析 Google Maps 短網址中的地點。"
+            reply = "⚠️ 無法解析 Google Maps 短網址中的地點。"
 
-    elif re.search(r"(新增|加入|add|地點)", msg):
-        query = re.sub(r"(新增|加入|add|地點)", "", msg).strip()
-        if query:
-            result = get_coordinates(query, gmaps)
+    elif any(alias in msg for alias in ADD_ALIASES):
+        name = re.sub("|".join(ADD_ALIASES), "", msg).strip()
+        if name:
+            result = get_coordinates(name, gmaps)
             if result:
-                reply = add_location(user_id, query, result["lat"], result["lng"], collection)
+                collection.insert_one({
+                    "user_id": user_id,
+                    "name": name,
+                    "lat": result["lat"],
+                    "lng": result["lng"]
+                })
+                reply = f"✅ 已新增地點：{name}"
             else:
-                reply = f"找不到地點「{query}」。"
+                reply = f"⚠️ 找不到地點：{name}"
         else:
             reply = "請輸入地點名稱，例如：新增 台北101"
 
     else:
-        flex = create_flex_message()
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[flex]
-            )
-        )
+        # ❓ fallback 用法說明
+        flex_json = {
+            "type": "bubble",
+            "body": {
+                "type": "box",
+                "layout": "vertical",
+                "contents": [
+                    {"type": "text", "text": "📍 指令教學", "weight": "bold", "size": "lg"},
+                    {"type": "text", "text": "➕ 新增 台北101\n📋 地點清單\n🚗 排序\n🗑️ 刪除 2\n📝 註解 3 百貨公司", "wrap": True, "margin": "md", "size": "sm"}
+                ]
+            }
+        }
+        flex = FlexMessage(alt_text="指令選單", contents=flex_json)
+        line_bot_api.reply_message(ReplyMessageRequest(
+            reply_token=event.reply_token,
+            messages=[flex]
+        ))
         return
 
-    line_bot_api.reply_message(
-        ReplyMessageRequest(
-            reply_token=event.reply_token,
-            messages=[TextMessage(text=reply)]
-        )
-    )
+    line_bot_api.reply_message(ReplyMessageRequest(
+        reply_token=event.reply_token,
+        messages=[TextMessage(text=reply)]
+    ))
 
-# ✅ 啟動伺服器
+# ✅ 執行伺服器
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)

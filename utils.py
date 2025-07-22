@@ -49,8 +49,10 @@ def show_location_list(user_id, collection: Collection):
         return "目前尚未加入任何地點。"
     reply = "📍 目前地點清單：\n"
     for i, doc in enumerate(docs, 1):
-        reply += f"{i}. {doc['name']}\n"
+        note = f"（{doc['note']}）" if 'note' in doc else ""
+        reply += f"{i}. {doc['name']} {note}\n"
     return reply
+
 
 def clear_locations(user_id, collection: Collection):
     collection.delete_many({"user_id": user_id})
@@ -64,3 +66,13 @@ def create_flex_message():
     with open("flex_message_template.json", "r", encoding="utf-8") as f:
         contents = json.load(f)
     return FlexMessage(alt_text="指令選單", contents=contents)
+def add_location_note(user_id, index, note, collection):
+    docs = list(collection.find({"user_id": user_id}))
+    if index < 1 or index > len(docs):
+        return "❌ 地點編號無效，請輸入 1~5 範圍內的地點編號。"
+    target = docs[index - 1]
+    collection.update_one(
+        {"_id": target["_id"]},
+        {"$set": {"note": note}}
+    )
+    return f"📝 已為第 {index} 個地點「{target['name']}」加上註解：{note}"
