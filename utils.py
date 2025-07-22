@@ -1,8 +1,9 @@
 import requests
 import googlemaps
 from pymongo.collection import Collection
-from linebot.v3.messaging.models import FlexMessage, BubbleContainer, TextComponent
-
+from linebot.v3.messaging.models.flex_message import FlexMessage
+from linebot.v3.messaging.models.bubble_container import BubbleContainer
+from linebot.v3.messaging.models.text_component import TextComponent
 # ✅ 查地址座標
 def get_coordinates(query, gmaps):
     try:
