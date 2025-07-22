@@ -27,9 +27,37 @@ client = MongoClient(os.getenv("MONGO_URL", "mongodb://localhost:27017"))
 db = client["linebot"]
 collection = db["locations"]
 
-# 初始化 RichMenu（只需執行一次）
-from richmenu_setup import setup_rich_menu
-setup_rich_menu(CHANNEL_ACCESS_TOKEN)
+# ✅ 自動設定 RichMenu（只執行一次，若已存在則跳過）
+from linebot.models import RichMenu, RichMenuArea, RichMenuBounds, MessageAction
+
+def setup_rich_menu_once():
+    existing_menus = line_bot_api.get_rich_menu_list()
+    if existing_menus:
+        return  # 已有 RichMenu 就跳過
+
+    rich_menu = RichMenu(
+        size={"width": 2500, "height": 843},
+        selected=True,
+        name="功能選單",
+        chat_bar_text="打開選單",
+        areas=[
+            RichMenuArea(bounds=RichMenuBounds(x=0, y=0, width=833, height=843),
+                         action=MessageAction(label="新增地點", text="新增地點 台北101")),
+            RichMenuArea(bounds=RichMenuBounds(x=834, y=0, width=833, height=843),
+                         action=MessageAction(label="顯示地點", text="地點清單")),
+            RichMenuArea(bounds=RichMenuBounds(x=1667, y=0, width=833, height=843),
+                         action=MessageAction(label="排序路線", text="排序路線"))
+        ]
+    )
+
+    rich_menu_id = line_bot_api.create_rich_menu(rich_menu)
+    with open("static/menu.png", "rb") as f:
+        line_bot_api.set_rich_menu_image(rich_menu_id, "image/png", f)
+
+    line_bot_api.set_default_rich_menu(rich_menu_id)
+
+# ✅ 設定一次 RichMenu
+setup_rich_menu_once()
 
 @app.route("/callback", methods=['POST'])
 def callback():
@@ -48,19 +76,16 @@ def handle_message(event):
     user_id = event.source.user_id
     msg = event.message.text.strip()
 
-    # 🔹 清單
     if re.search(r"(地點清單|行程|目前地點)", msg):
         reply = show_location_list(user_id, collection)
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
         return
 
-    # 🔹 清空
     if re.search(r"(清空|全部刪除|reset)", msg):
         reply = clear_locations(user_id, collection)
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
         return
 
-    # 🔹 排序
     if re.search(r"(排序|路線|最短路徑)", msg):
         docs = list(collection.find({"user_id": user_id}))
         if len(docs) < 2:
@@ -71,7 +96,6 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
         return
 
-    # 🔹 Google Maps 短網址
     if "maps.app.goo.gl" in msg:
         place = extract_location_from_url(msg, gmaps)
         if place:
@@ -81,7 +105,6 @@ def handle_message(event):
         line_bot_api.reply_message(event.reply_token, TextSendMessage(text=reply))
         return
 
-    # 🔹 加地點（模糊搜尋）
     if re.search(r"(新增|加入|add|地點)", msg):
         query = re.sub(r"(新增|加入|add|地點)", "", msg).strip()
         if query:
