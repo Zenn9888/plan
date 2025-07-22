@@ -5,8 +5,9 @@ import traceback
 
 from flask import Flask, request, abort
 
+# ✅ LINE SDK v3 正確匯入與初始化
 from linebot.v3.messaging import (
-    Configuration, MessagingApi, ReplyMessageRequest
+    Configuration, MessagingApi, ApiClient, ReplyMessageRequest
 )
 from linebot.v3.messaging.models import TextMessage, FlexMessage
 from linebot.v3.webhook import WebhookHandler
@@ -29,16 +30,19 @@ app = Flask(__name__)
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
-print("✅ CHANNEL_ACCESS_TOKEN:", os.getenv("LINE_CHANNEL_ACCESS_TOKEN"))
-print("✅ CHANNEL_SECRET:", os.getenv("LINE_CHANNEL_SECRET"))
-print("✅ GOOGLE_MAPS_API_KEY:", os.getenv("GOOGLE_MAPS_API_KEY"))
-print("✅ MONGO_URL:", os.getenv("MONGO_URL"))
-# ✅ 初始化 LINE Bot SDK v3
+MONGO_URL = os.getenv("MONGO_URL") or os.getenv("MONGO_URI") or "mongodb://localhost:27017"
+
+print("✅ CHANNEL_ACCESS_TOKEN:", CHANNEL_ACCESS_TOKEN)
+print("✅ CHANNEL_SECRET:", CHANNEL_SECRET)
+print("✅ GOOGLE_MAPS_API_KEY:", GOOGLE_API_KEY)
+print("✅ MONGO_URL:", MONGO_URL)
+
+# ✅ 正確初始化 LINE Bot SDK v3
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-line_bot_api = MessagingApi(configuration)
+api_client = ApiClient(configuration)
+line_bot_api = MessagingApi(api_client)
 handler = WebhookHandler(CHANNEL_SECRET)
- #
+
 # ✅ 初始化 Google Maps 與 MongoDB
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 client = MongoClient(MONGO_URL)
