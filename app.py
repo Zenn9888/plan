@@ -1,6 +1,5 @@
 import os
 import re
-
 import json
 from flask import Flask, request, abort
 
@@ -31,13 +30,14 @@ GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 print("✅ CHANNEL_ACCESS_TOKEN:", os.getenv("LINE_CHANNEL_ACCESS_TOKEN"))
 print("✅ CHANNEL_SECRET:", os.getenv("LINE_CHANNEL_SECRET"))
+print("✅ CHANNEL_SECRET:", os.getenv("LINE_CHANNEL_SECRET"))
 print("✅ GOOGLE_MAPS_API_KEY:", os.getenv("GOOGLE_MAPS_API_KEY"))
 print("✅ MONGO_URL:", os.getenv("MONGO_URL"))
 # ✅ 初始化 LINE Bot SDK v3
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 line_bot_api = MessagingApi(configuration)
 handler = WebhookHandler(CHANNEL_SECRET)
-
+ #
 # ✅ 初始化 Google Maps 與 MongoDB
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 client = MongoClient(MONGO_URL)
