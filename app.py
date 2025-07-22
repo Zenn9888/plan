@@ -4,9 +4,8 @@ import json
 from flask import Flask, request, abort
 from linebot.v3.messaging import MessagingApi, ReplyMessageRequest
 from linebot.v3.webhook import WebhookHandler
-from linebot.v3.messaging.models import (
-    TextMessage, FlexMessage, TextMessageContent, MessageEvent
-)
+from linebot.v3.webhook.models import MessageEvent
+from linebot.v3.messaging.models import TextMessage, FlexMessage
 import googlemaps
 from pymongo import MongoClient
 from utils import (
@@ -46,7 +45,8 @@ def callback():
 # ✅ 處理文字訊息
 @handler.add(MessageEvent)
 def handle_message(event):
-    if not isinstance(event.message, TextMessageContent):
+    # ✅ v3 正確寫法：用 TextMessage 判斷是否為文字訊息
+    if not isinstance(event.message, TextMessage):
         return
 
     user_id = event.source.user_id
