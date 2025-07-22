@@ -1,13 +1,17 @@
-# render.yaml
 services:
   - type: web
     name: linebot-place-sorting
     env: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python app.py"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python app.py
     envVars:
       - key: LINE_CHANNEL_ACCESS_TOKEN
         sync: false
       - key: LINE_CHANNEL_SECRET
         sync: false
+      - key: GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: MONGO_URL
+        sync: false
+pythonVersion: 3.10.13
