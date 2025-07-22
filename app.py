@@ -1,11 +1,10 @@
 import os
 import re
-import json
 from flask import Flask, request, abort
+from linebot.v3.webhook import WebhookHandler
+from linebot.v3.webhooks import MessageEvent, TextMessageContent
 from linebot.v3.messaging import MessagingApi, Configuration, ApiClient, ReplyMessageRequest
 from linebot.v3.messaging.models import TextMessage, FlexMessage
-from linebot.v3.webhook import WebhookHandler
-from linebot.v3.webhooks import MessageEvent
 
 import googlemaps
 from pymongo import MongoClient
@@ -14,7 +13,6 @@ from utils import (
     extract_location_from_url, create_static_map_url,
     show_location_list, clear_locations, add_location
 )
-
 
 # ✅ 初始化 Flask
 app = Flask(__name__)
@@ -77,7 +75,7 @@ def handle_message(event):
         if place:
             reply = add_location(user_id, place["name"], place["lat"], place["lng"], collection)
         else:
-            reply = "無法解析 Google Maps 短網址中的地點。"
+            reply = "❌ 無法解析 Google Maps 短網址中的地點。"
     elif re.search(r"(新增|加入|add|地點)", msg):
         query = re.sub(r"(新增|加入|add|地點)", "", msg).strip()
         if query:
@@ -85,7 +83,7 @@ def handle_message(event):
             if result:
                 reply = add_location(user_id, query, result["lat"], result["lng"], collection)
             else:
-                reply = f"找不到地點「{query}」。"
+                reply = f"❌ 找不到地點「{query}」。"
         else:
             reply = "請輸入地點名稱，例如：新增 台北101"
     else:
