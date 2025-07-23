@@ -6,19 +6,16 @@ import googlemaps
 from dotenv import load_dotenv
 from flask import Flask, request, abort
 
-from linebot.v3.messaging import (
-    MessagingApi,
-    Configuration,
-    ApiClient,
+# ✅ LINE Bot v3 SDK 正確匯入方式
+from linebot.v3.webhooks import WebhookParser
+from linebot.v3.webhooks.models import MessageEvent, TextMessageContent
+from linebot.v3.messaging import MessagingApi, Configuration
+from linebot.v3.messaging.models import (
     ReplyMessageRequest,
-    TextMessage
+    TextMessage,
 )
-from linebot.v3.webhook import (
-    WebhookHandler,
-    WebhookEvent,
-    MessageEvent,
-    TextMessageContent
-)
+
+# ✅ MongoDB 連線
 from pymongo import MongoClient
 
 load_dotenv()
