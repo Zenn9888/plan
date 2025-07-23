@@ -36,6 +36,7 @@ COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
 # === 解析 Google Maps 短網址 ===
 def resolve_place_name(input_text):
     try:
+        # 檢查是否為網址，並處理 Google Maps 短網址
         if input_text.startswith("http"):
             # 跟蹤短網址的重定向
             res = requests.get(input_text, allow_redirects=True, timeout=10)
@@ -46,13 +47,13 @@ def resolve_place_name(input_text):
         # 解析 /place/ 之後的部分來獲取地點名稱
         match = re.search(r"/place/([^/]+)", url)
         if match:
-            return requests.utils.unquote(match.group(1))  # 解碼 URL
+            return unquote(match.group(1))  # 解碼 URL，返回地點名稱
 
         # 進一步處理，如果是從 google.com/maps 發現對應的 URL
         if 'google.com/maps/place/' in url:
             match = re.search(r"place/([^/]+)", url)
             if match:
-                return requests.utils.unquote(match.group(1))  # 解碼 URL
+                return unquote(match.group(1))  # 解碼 URL，返回地點名稱
 
         # 如果是其他的 Google 地點名稱查詢
         gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
@@ -61,7 +62,6 @@ def resolve_place_name(input_text):
     except Exception as e:
         print(f"解析錯誤: {e}")
     return None
-
 # === webhook ===
 @app.route("/callback", methods=['POST'])
 def callback():
