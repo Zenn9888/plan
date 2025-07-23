@@ -5,29 +5,42 @@ import requests
 import googlemaps
 from dotenv import load_dotenv
 from flask import Flask, request, abort
-from pymongo import MongoClient
-from linebot.v3.messaging import Configuration, MessagingApi
+
+from linebot.v3.messaging import MessagingApi, Configuration
 from linebot.v3.messaging.models import ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import WebhookHandler
+from linebot.v3.webhooks import WebhookParser, SignatureValidator
 from linebot.v3.webhooks.models import MessageEvent, TextMessageContent
 
-# === 載入環境變數 ===
-load_dotenv()
-CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
-CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
-GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-MONGO_URL = os.getenv("MONGO_URL")
+from pymongo import MongoClient
 
-# === 初始化 ===
+# ✅ 載入環境變數
+load_dotenv()
+CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
+CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+
+if not CHANNEL_SECRET or not CHANNEL_ACCESS_TOKEN:
+    raise ValueError("❌ LINE_CHANNEL_SECRET 或 LINE_CHANNEL_ACCESS_TOKEN 環境變數未設置")
+
+# ✅ 初始化 Flask
 app = Flask(__name__)
+
+# ✅ 初始化 LINE Messaging API
+configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
+line_bot_api = MessagingApi(configuration)
+signature_validator = SignatureValidator(CHANNEL_SECRET)
+parser = WebhookParser(signature_validator)
+
+# ✅ 初始化 Google Maps API
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
-client = MongoClient(MONGO_URL)
-db = client["linebot_db"]
+
+# ✅ 初始化 MongoDB
+mongo_client = MongoClient(MONGO_URL)
+db = mongo_client["line_location_bot"]
 collection = db["locations"]
 
-configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-api_instance = MessagingApi(configuration)
-handler = WebhookHandler(CHANNEL_SECRET)
+
 
 # === 指令集別名 ===
 ADD_ALIASES = ["新增", "加入", "增加"]
