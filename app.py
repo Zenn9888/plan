@@ -1,16 +1,13 @@
 import os
 import re
-import json
 import requests
 import googlemaps
 from dotenv import load_dotenv
 from flask import Flask, request, abort
 from pymongo import MongoClient
-
 from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage  # 移除 ReplyMessage
+    MessageEvent, TextMessage, TextSendMessage
 )
 
 # ✅ 載入 .env 設定
@@ -52,8 +49,8 @@ def resolve_place_name(input_text):
         gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
         if gmaps_result.get("candidates"):
             return gmaps_result["candidates"][0]["name"]
-    except:
-        pass
+    except Exception as e:
+        print(f"解析錯誤: {e}")
     return None
 
 # === webhook ===
@@ -84,13 +81,17 @@ def handle_message(event):
 
     # 新增地點
     if any(a in msg for a in ADD_ALIASES):
-        place_input = msg.split(maxsplit=1)[-1]
-        place_name = resolve_place_name(place_input)
-        if place_name:
-            collection.insert_one({"user_id": user_id, "name": place_name, "comment": None})
-            reply = f"✅ 地點已新增：{place_name}"
+        place_input = msg.split(maxsplit=1)[-1] if len(msg.split()) > 1 else ""
+        
+        if not place_input:
+            reply = "⚠️ 請提供地點名稱或 Google Maps 網址。"
         else:
-            reply = "⚠️ 無法解析地點網址或名稱。"
+            place_name = resolve_place_name(place_input)
+            if place_name:
+                collection.insert_one({"user_id": user_id, "name": place_name, "comment": None})
+                reply = f"✅ 地點已新增：{place_name}"
+            else:
+                reply = "⚠️ 無法解析地點網址或名稱。"
 
     # 顯示清單
     elif msg in ["地點", "清單"]:
@@ -141,7 +142,7 @@ def handle_message(event):
     elif re.match(r"(清空|全部刪除|reset)", msg):
         reply = "⚠️ 是否確認清空所有地點？請輸入 `確認清空`"
 
-    elif msg == "確認清空":
+    elif msg == "確認":
         collection.delete_many({"user_id": user_id})
         reply = "✅ 所有地點已清空。"
 
@@ -159,7 +160,7 @@ def handle_message(event):
     if reply:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=reply)  # 使用 TextSendMessage 回覆訊息
+            TextSendMessage(text=reply)
         )
 
 # === 啟動伺服器 ===
