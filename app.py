@@ -5,41 +5,31 @@ import requests
 import googlemaps
 from dotenv import load_dotenv
 from flask import Flask, request, abort
-
-from linebot.v3.webhooks import CallbackRequestParser
-from linebot.v3.webhooks.models import MessageEvent, TextMessageContent
-from linebot.v3.messaging import MessagingApi, Configuration
-from linebot.v3.messaging.models import ReplyMessageRequest, TextMessage
-
 from pymongo import MongoClient
 
-# ✅ 載入環境變數
+from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
+from linebot.models import (
+    MessageEvent, TextMessage, TextSendMessage, ReplyMessage
+)
+
+# ✅ 載入 .env 設定
 load_dotenv()
-CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
 
-if not CHANNEL_SECRET or not CHANNEL_ACCESS_TOKEN:
-    raise ValueError("❌ LINE_CHANNEL_SECRET 或 LINE_CHANNEL_ACCESS_TOKEN 環境變數未設置")
-
-# ✅ 初始化 Flask
-app = Flask(__name__)
-
-# ✅ 初始化 LINE Messaging API
-configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-line_bot_api = MessagingApi(configuration)
-parser = CallbackRequestParser(CHANNEL_SECRET)
-
-# ✅ 初始化 Google Maps API
+# ✅ 初始化
+line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
+handler = WebhookHandler(CHANNEL_SECRET)
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 
-# ✅ 初始化 MongoDB
-mongo_client = MongoClient(MONGO_URL)
-db = mongo_client["line_location_bot"]
+client = MongoClient(MONGO_URL)
+db = client["line_bot_db"]
 collection = db["locations"]
 
-
+app = Flask(__name__)
 
 # === 指令集別名 ===
 ADD_ALIASES = ["新增", "加入", "增加"]
@@ -81,7 +71,7 @@ def callback():
 # === 處理訊息 ===
 @handler.add(MessageEvent)
 def handle_message(event):
-    if not isinstance(event.message, TextMessageContent):
+    if not isinstance(event.message, TextMessage):
         return
 
     msg = event.message.text.strip()
@@ -167,11 +157,9 @@ def handle_message(event):
         )
 
     if reply:
-        api_instance.reply_message_with_http_info(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=reply)]
-            )
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=reply)
         )
 
 # === 啟動伺服器 ===
