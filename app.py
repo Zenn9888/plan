@@ -13,7 +13,7 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage
 )
-
+from urllib.parse import unquote
 # ✅ 載入 .env 或 Render 環境變數
 load_dotenv()
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
@@ -41,40 +41,31 @@ COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
 def resolve_place_name(input_text):
     try:
         if input_text.startswith("http"):
-            print(f"📥 嘗試解析短網址: {input_text}")
             res = requests.get(input_text, allow_redirects=True, timeout=10)
             url = res.url
-            print(f"🔁 重定向後的 URL: {url}")
         else:
             url = input_text
 
-        # 優先抓 /place/後面的地點名稱
+        # 優先抓 /place/後的地點名稱
         place_match = re.search(r"/place/([^/]+)", url)
         if place_match:
-            place = unquote(place_match.group(1))
-            print(f"✅ 抽出 /place 地點: {place}")
-            return place
+            return unquote(place_match.group(1))
 
-        # 再抓 ?q= 參數（有時是地址）
+        # 再抓 ?q= 後的地點
         q_match = re.search(r"[?&]q=([^&]+)", url)
         if q_match:
-            place = unquote(q_match.group(1))
-            print(f"✅ 抽出 q 地點: {place}")
-            return place
+            return unquote(q_match.group(1))
 
-        # 最後 fallback 用 Google Maps API 查
+        # 最後才用 API 查 place_id -> 轉地點名稱
         result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
         if result.get("candidates"):
             place_id = result["candidates"][0]["place_id"]
             details = gmaps.place(place_id=place_id, fields=["name"])
-            name = details["result"]["name"]
-            print(f"✅ 從 place_id 查得地點名稱: {name}")
-            return name
+            return details["result"]["name"]
 
     except Exception as e:
         print(f"❌ 地點解析錯誤: {e}")
     return None
-
 
 # === Webhook 路由 ===
 @app.route("/callback", methods=['POST'])
