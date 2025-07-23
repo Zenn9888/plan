@@ -2,19 +2,24 @@ import os
 import re
 import json
 import requests
-from flask import Flask, request, abort
-from pymongo import MongoClient
-from dotenv import load_dotenv
 import googlemaps
+from dotenv import load_dotenv
+from flask import Flask, request, abort
 
-from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import (
-    Configuration, ApiClient, MessagingApi, ReplyMessageRequest,
+    MessagingApi,
+    Configuration,
+    ApiClient,
+    ReplyMessageRequest,
     TextMessage
 )
-from linebot.v3.webhooks import (
-    SignatureValidator, CallbackRequest, MessageEvent, TextMessageContent
+from linebot.v3.webhook import (
+    WebhookHandler,
+    WebhookEvent,
+    MessageEvent,
+    TextMessageContent
 )
+from pymongo import MongoClient
 
 load_dotenv()
 
