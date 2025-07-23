@@ -59,6 +59,10 @@ import requests
 import re
 from urllib.parse import unquote
 
+import requests
+import re
+from urllib.parse import unquote
+
 def resolve_place_name(input_text):
     try:
         if input_text.startswith("http"):
