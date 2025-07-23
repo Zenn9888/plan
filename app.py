@@ -5,188 +5,162 @@ import requests
 import googlemaps
 from dotenv import load_dotenv
 from flask import Flask, request, abort
-
-# ✅ LINE Bot v3 SDK 正確匯入方式
-from linebot.v3.webhooks import WebhookParser
-from linebot.v3.webhooks.models import MessageEvent, TextMessageContent
-from linebot.v3.messaging import MessagingApi, Configuration
-from linebot.v3.messaging.models import (
-    ReplyMessageRequest,
-    TextMessage,
-)
-
-# ✅ MongoDB 連線
 from pymongo import MongoClient
+from linebot.v3.messaging import Configuration, MessagingApi
+from linebot.v3.messaging.models import ReplyMessageRequest, TextMessage
+from linebot.v3.webhooks import WebhookHandler
+from linebot.v3.webhooks.models import MessageEvent, TextMessageContent
 
+# === 載入環境變數 ===
 load_dotenv()
-
-app = Flask(__name__)
-
-# 🔐 環境變數
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 MONGO_URL = os.getenv("MONGO_URL")
 
-# ⛓️ LINE SDK 初始化
-configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
-api_client = ApiClient(configuration)
-line_bot_api = MessagingApi(api_client)
-handler = WebhookHandler(CHANNEL_SECRET)
-signature_validator = SignatureValidator(CHANNEL_SECRET)
-
-# 🌍 Google Maps Client
+# === 初始化 ===
+app = Flask(__name__)
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
-
-# 🗃️ MongoDB 設定
 client = MongoClient(MONGO_URL)
-db = client["line_bot"]
+db = client["linebot_db"]
 collection = db["locations"]
 
-# 🧠 指令別名對照表
-command_aliases = {
-    "add": ["新增", "加入", "增加"],
-    "clear": ["清空", "全部刪除", "reset"],
-    "delete": ["刪除", "移除", "del", "delete"],
-    "note": ["註解", "備註"],
-    "list": ["清單", "列表", "地點"]
-}
+configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
+api_instance = MessagingApi(configuration)
+handler = WebhookHandler(CHANNEL_SECRET)
 
-def match_command(msg, key):
-    return any(alias in msg for alias in command_aliases[key])
+# === 指令集別名 ===
+ADD_ALIASES = ["新增", "加入", "增加"]
+DELETE_PATTERN = r"刪除 (\d+)"
+COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
 
-def extract_place_from_url(url):
+# === 解析 Google Maps 短網址 ===
+def resolve_place_name(input_text):
     try:
-        res = requests.get(url, allow_redirects=True)
-        if "place_id=" in res.url:
-            place_id = re.search(r"place_id=([^&]+)", res.url).group(1)
-            place = gmaps.place(place_id=place_id)
+        if input_text.startswith("http"):
+            res = requests.get(input_text, allow_redirects=True, timeout=10)
+            url = res.url
         else:
-            place = gmaps.find_place(input=res.url, input_type="textquery", fields=["name", "geometry", "formatted_address"])
-        if "result" in place:
-            name = place["result"]["name"]
-            location = place["result"]["geometry"]["location"]
-            return name, location["lat"], location["lng"]
-        elif "candidates" in place and place["candidates"]:
-            c = place["candidates"][0]
-            return c["name"], c["geometry"]["location"]["lat"], c["geometry"]["location"]["lng"]
+            url = input_text
+
+        match = re.search(r"/place/([^/]+)", url)
+        if match:
+            return requests.utils.unquote(match.group(1))
+
+        gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
+        if gmaps_result.get("candidates"):
+            return gmaps_result["candidates"][0]["name"]
     except:
         pass
-    return None, None, None
+    return None
 
-def geocode_place(text):
-    try:
-        result = gmaps.geocode(text)
-        if result:
-            name = result[0]["formatted_address"]
-            location = result[0]["geometry"]["location"]
-            return name, location["lat"], location["lng"]
-    except:
-        pass
-    return None, None, None
-
-def sort_by_lat(locations):
-    return sorted(locations, key=lambda x: x["lat"])
-
-@app.route("/callback", methods=["POST"])
+# === webhook ===
+@app.route("/callback", methods=['POST'])
 def callback():
-    signature = request.headers["X-Line-Signature"]
+    signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
     try:
-        handler.handle(body, signature_validator)
+        handler.handle(body, signature)
     except Exception as e:
         print("❌ Webhook Error:", e)
         abort(400)
-    return "OK"
+    return 'OK'
 
-@handler.add(MessageEvent, message=TextMessageContent)
+# === 處理訊息 ===
+@handler.add(MessageEvent)
 def handle_message(event):
+    if not isinstance(event.message, TextMessageContent):
+        return
+
     msg = event.message.text.strip()
-    user_id = event.source.group_id if event.source.type == "group" else event.source.user_id
-    reply = "請輸入有效指令，輸入「指令說明」查看用法。"
+    source = event.source
+    user_id = getattr(source, 'group_id', None) or getattr(source, 'user_id', None)
+    if not user_id:
+        return
 
-    # 📌 新增地點
-    if match_command(msg, "add"):
-        location_text = re.sub(r"^(新增|加入|增加)地點[:： ]*", "", msg)
-        name, lat, lng = (None, None, None)
-        if "http" in location_text:
-            name, lat, lng = extract_place_from_url(location_text)
-        else:
-            name, lat, lng = geocode_place(location_text)
-        if name:
-            collection.insert_one({"user_id": user_id, "name": name, "lat": lat, "lng": lng, "note": ""})
-            reply = f"✅ 已新增地點：{name}"
-        else:
-            reply = "❌ 無法解析地點網址或名稱"
+    reply = ""
 
-    # 🗑️ 清空
-    elif match_command(msg, "clear"):
-        reply = "⚠️ 確定要清空所有地點嗎？請回覆「確認清空」"
+    # 新增地點
+    if any(a in msg for a in ADD_ALIASES):
+        place_input = msg.split(maxsplit=1)[-1]
+        place_name = resolve_place_name(place_input)
+        if place_name:
+            collection.insert_one({"user_id": user_id, "name": place_name, "comment": None})
+            reply = f"✅ 地點已新增：{place_name}"
+        else:
+            reply = "⚠️ 無法解析地點網址或名稱。"
+
+    # 顯示清單
+    elif msg in ["地點", "清單"]:
+        items = list(collection.find({"user_id": user_id}))
+        if not items:
+            reply = "📭 尚未新增任何地點"
+        else:
+            # 排序南到北（經度）
+            def get_lat(loc):
+                try:
+                    result = gmaps.geocode(loc["name"])
+                    return result[0]["geometry"]["location"]["lat"]
+                except:
+                    return 0
+            items.sort(key=get_lat)
+            lines = []
+            for i, loc in enumerate(items, start=1):
+                line = f"{i}. {loc['name']}"
+                if loc.get("comment"):
+                    line += f"（{loc['comment']}）"
+                lines.append(line)
+            reply = "📍 地點清單：\n" + "\n".join(lines)
+
+    # 刪除指定地點
+    elif re.search(DELETE_PATTERN, msg):
+        index = int(re.search(DELETE_PATTERN, msg).group(1)) - 1
+        items = list(collection.find({"user_id": user_id}))
+        if 0 <= index < len(items):
+            name = items[index]['name']
+            collection.delete_one({"_id": items[index]['_id']})
+            reply = f"🗑️ 已刪除地點：{name}"
+        else:
+            reply = "⚠️ 指定編號無效。"
+
+    # 註解地點
+    elif re.search(COMMENT_PATTERN, msg):
+        match = re.search(COMMENT_PATTERN, msg)
+        index = int(match.group(1)) - 1
+        comment = match.group(2)
+        items = list(collection.find({"user_id": user_id}))
+        if 0 <= index < len(items):
+            collection.update_one({"_id": items[index]['_id']}, {"$set": {"comment": comment}})
+            reply = f"📝 已更新註解：{items[index]['name']} → {comment}"
+        else:
+            reply = "⚠️ 無法註解，請確認編號正確。"
+
+    # 清空地點（需二次確認）
+    elif re.match(r"(清空|全部刪除|reset)", msg):
+        reply = "⚠️ 是否確認清空所有地點？請輸入 `確認清空`"
+
     elif msg == "確認清空":
         collection.delete_many({"user_id": user_id})
         reply = "✅ 所有地點已清空。"
 
-    # ❌ 刪除編號
-    elif match_command(msg, "delete"):
-        number = re.search(r"\d+", msg)
-        if number:
-            index = int(number.group()) - 1
-            locations = list(collection.find({"user_id": user_id}))
-            if 0 <= index < len(locations):
-                name = locations[index]["name"]
-                collection.delete_one({"_id": locations[index]["_id"]})
-                reply = f"🗑️ 已刪除：{name}"
-            else:
-                reply = "❌ 無效編號"
-        else:
-            reply = "請輸入要刪除的地點編號，如：刪除 2"
-
-    # 📝 註解地點
-    elif match_command(msg, "note"):
-        match = re.search(r"註解\s*(\d+)\s+(.+)", msg)
-        if match:
-            index = int(match.group(1)) - 1
-            note = match.group(2)
-            locations = list(collection.find({"user_id": user_id}))
-            if 0 <= index < len(locations):
-                collection.update_one({"_id": locations[index]["_id"]}, {"$set": {"note": note}})
-                reply = f"📝 已為「{locations[index]['name']}」添加註解"
-            else:
-                reply = "❌ 無效地點編號"
-        else:
-            reply = "格式錯誤，請使用：註解 2 這裡很好玩"
-
-    # 📋 地點清單
-    elif match_command(msg, "list"):
-        locations = list(collection.find({"user_id": user_id}))
-        if not locations:
-            reply = "📭 尚未新增任何地點"
-        else:
-            locations = sort_by_lat(locations)
-            lines = []
-            for i, loc in enumerate(locations, 1):
-                note = f"（{loc['note']}）" if loc.get("note") else ""
-                lines.append(f"{i}. {loc['name']}{note}")
-            reply = "\n".join(lines)
-
-    # 📖 指令說明
-    elif "指令" in msg or "幫助" in msg:
+    # 指令說明
+    elif msg in ["指令", "幫助", "help"]:
         reply = (
-            "📘 指令說明：\n"
-            "➕ 新增地點 [名稱 或 Google Maps 網址]\n"
+            "📘 指令集說明：\n"
+            "➕ 新增地點 [地名/地圖網址]\n"
             "🗑️ 刪除 [編號]\n"
             "📝 註解 [編號] [說明]\n"
-            "📋 清單 / 列表 / 地點\n"
-            "♻️ 清空 / 全部刪除\n"
+            "📋 地點 或 清單：顯示排序後地點\n"
+            "❌ 清空：刪除所有地點（需再次確認）"
         )
 
-    # 📤 回覆
-    line_bot_api.reply_message(
-        ReplyMessageRequest(
-            reply_token=event.reply_token,
-            messages=[TextMessage(text=reply)]
+    if reply:
+        api_instance.reply_message_with_http_info(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=reply)]
+            )
         )
-    )
 
 # === 啟動伺服器 ===
 if __name__ == "__main__":
