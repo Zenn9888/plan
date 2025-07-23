@@ -41,28 +41,32 @@ COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
 def resolve_place_name(input_text):
     try:
         if input_text.startswith("http"):
-            # 追蹤短網址重定向
+            # 追蹤 Google Maps 短網址
             res = requests.get(input_text, allow_redirects=True, timeout=10)
             url = res.url
         else:
             url = input_text
 
-        # 解析網址中的地點名稱
+        # ?q= 後的參數
         q_match = re.search(r"[?&]q=([^&]+)", url)
         if q_match:
             return unquote(q_match.group(1))
 
+        # /place/ 後的文字
         place_match = re.search(r"/place/([^/]+)", url)
         if place_match:
             return unquote(place_match.group(1))
 
-        # 若純文字，使用 Google Maps API 查詢
-        result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
+        # fallback 用 find_place 拿到 place_id，再查詳細地名
+        result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
         if result.get("candidates"):
-            return result["candidates"][0]["name"]
+            place_id = result["candidates"][0]["place_id"]
+            detail = gmaps.place(place_id=place_id, fields=["name"])
+            return detail["result"]["name"]
     except Exception as e:
         print(f"❌ 解析錯誤: {e}")
     return None
+
 
 # === Webhook 路由 ===
 @app.route("/callback", methods=['POST'])
