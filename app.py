@@ -55,21 +55,25 @@ import requests
 import re
 from urllib.parse import unquote
 
+import requests
+import re
+from urllib.parse import unquote
+
 def resolve_place_name(input_text):
     try:
-        # 檢查是否為 Google Maps 短網址
         if input_text.startswith("http"):
-            # 跟蹤短網址的重定向
+            # 跟蹤短網址的重定向，獲取最終長網址
             res = requests.get(input_text, allow_redirects=True, timeout=10)
             url = res.url  # 重定向後的最終 URL
             print(f"重定向後的 URL: {url}")  # 用來檢查重定向後的 URL
         else:
             url = input_text
 
-        # 解析 /place/ 之後的部分來獲取地點名稱
-        match = re.search(r"/place/([^/]+)", url)
+        # 解析 URL 中的 q= 參數來獲取地點名稱
+        match = re.search(r"q=([^&]+)", url)
         if match:
-            return unquote(match.group(1))  # 解碼 URL，返回地點名稱
+            place_name = unquote(match.group(1))  # 解碼 URL，返回地點名稱
+            return place_name
 
         # 進一步處理，當 URL 包含 google.com/maps/place/
         if 'google.com/maps/place/' in url:
