@@ -34,6 +34,11 @@ DELETE_PATTERN = r"刪除 (\d+)"
 COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
 
 # === 解析 Google Maps 短網址 ===
+import requests
+import re
+import googlemaps
+from urllib.parse import unquote
+
 def resolve_place_name(input_text):
     try:
         # 檢查是否為網址，並處理 Google Maps 短網址
@@ -43,6 +48,8 @@ def resolve_place_name(input_text):
             url = res.url  # 重定向後的最終 URL
         else:
             url = input_text
+
+        print(f"最終解析的 URL: {url}")  # 用來檢查重定向後的 URL
 
         # 解析 /place/ 之後的部分來獲取地點名稱
         match = re.search(r"/place/([^/]+)", url)
@@ -62,6 +69,8 @@ def resolve_place_name(input_text):
     except Exception as e:
         print(f"解析錯誤: {e}")
     return None
+
+
 # === webhook ===
 @app.route("/callback", methods=['POST'])
 def callback():
