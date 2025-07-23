@@ -6,10 +6,10 @@ import googlemaps
 from dotenv import load_dotenv
 from flask import Flask, request, abort
 
+from linebot.v3.webhooks import CallbackRequestParser
+from linebot.v3.webhooks.models import MessageEvent, TextMessageContent
 from linebot.v3.messaging import MessagingApi, Configuration
 from linebot.v3.messaging.models import ReplyMessageRequest, TextMessage
-from linebot.v3.webhooks import WebhookParser, SignatureValidator
-from linebot.v3.webhooks.models import MessageEvent, TextMessageContent
 
 from pymongo import MongoClient
 
@@ -29,8 +29,7 @@ app = Flask(__name__)
 # ✅ 初始化 LINE Messaging API
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 line_bot_api = MessagingApi(configuration)
-signature_validator = SignatureValidator(CHANNEL_SECRET)
-parser = WebhookParser(signature_validator)
+parser = CallbackRequestParser(CHANNEL_SECRET)
 
 # ✅ 初始化 Google Maps API
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
