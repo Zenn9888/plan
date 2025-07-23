@@ -10,7 +10,7 @@ from pymongo import MongoClient
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
-    MessageEvent, TextMessage, TextSendMessage, ReplyMessage
+    MessageEvent, TextMessage, TextSendMessage  # 移除 ReplyMessage
 )
 
 # ✅ 載入 .env 設定
@@ -159,7 +159,7 @@ def handle_message(event):
     if reply:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text=reply)
+            TextSendMessage(text=reply)  # 使用 TextSendMessage 回覆訊息
         )
 
 # === 啟動伺服器 ===
