@@ -15,7 +15,7 @@ load_dotenv()
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+MONGO_URL = os.getenv("MONGO_URL")
 
 # ✅ 初始化
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
@@ -47,6 +47,12 @@ def resolve_place_name(input_text):
         match = re.search(r"/place/([^/]+)", url)
         if match:
             return requests.utils.unquote(match.group(1))  # 解碼 URL
+
+        # 進一步處理，如果是從 google.com/maps 發現對應的 URL
+        if 'google.com/maps/place/' in url:
+            match = re.search(r"place/([^/]+)", url)
+            if match:
+                return requests.utils.unquote(match.group(1))  # 解碼 URL
 
         # 如果是其他的 Google 地點名稱查詢
         gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
@@ -150,7 +156,7 @@ def handle_message(event):
         reply = "✅ 所有地點已清空。"
 
     # 指令說明
-    elif msg in ["指令", "幫助", "help", "清單"]:
+    elif msg in ["指令", "幫助", "help"]:
         reply = (
             "📘 指令集說明：\n"
             "➕ 新增地點 [地名/地圖網址]\n"
