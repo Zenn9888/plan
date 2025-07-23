@@ -1,23 +1,27 @@
 import os
 import re
+import json
 import requests
 import googlemaps
 from dotenv import load_dotenv
 from flask import Flask, request, abort
 from pymongo import MongoClient
+from urllib.parse import unquote
+
 from linebot import LineBotApi, WebhookHandler
+from linebot.exceptions import InvalidSignatureError
 from linebot.models import (
     MessageEvent, TextMessage, TextSendMessage
 )
 
-# ✅ 載入 .env 設定
+# ✅ 載入 .env 或 Render 環境變數
 load_dotenv()
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 MONGO_URL = os.getenv("MONGO_URL")
 
-# ✅ 初始化
+# ✅ 初始化 LINE / Maps / Mongo
 line_bot_api = LineBotApi(CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
@@ -28,82 +32,50 @@ collection = db["locations"]
 
 app = Flask(__name__)
 
-# === 指令集別名 ===
+# === 指令別名與正則 ===
 ADD_ALIASES = ["新增", "加入", "增加"]
 DELETE_PATTERN = r"刪除 (\d+)"
 COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
 
-# === 解析 Google Maps 短網址 ===
-import requests
-import re
-import googlemaps
-from urllib.parse import unquote
-
-import requests
-import re
-from urllib.parse import unquote
-
-import requests
-import re
-from urllib.parse import unquote
-
-import requests
-import re
-from urllib.parse import unquote
-
-import requests
-import re
-from urllib.parse import unquote
-
-import requests
-import re
-from urllib.parse import unquote
-
-import requests
-import re
-from urllib.parse import unquote
-
+# === 解析 Google Maps 網址 / 地點 ===
 def resolve_place_name(input_text):
     try:
         if input_text.startswith("http"):
-            # 跟蹤短網址的重定向，獲取最終長網址
+            # 追蹤短網址重定向
             res = requests.get(input_text, allow_redirects=True, timeout=10)
-            url = res.url  # 重定向後的最終 URL
-            print(f"重定向後的 URL: {url}")  # 用來檢查重定向後的 URL
+            url = res.url
         else:
             url = input_text
 
-        # 解析 URL 中的 q= 參數來獲取地點名稱
-        match = re.search(r"q=([^&]+)", url)
-        if match:
-            place_name = unquote(match.group(1))  # 解碼 URL，返回地點名稱
-            return place_name
+        # 解析網址中的地點名稱
+        q_match = re.search(r"[?&]q=([^&]+)", url)
+        if q_match:
+            return unquote(q_match.group(1))
 
-        # 進一步處理，當 URL 包含 google.com/maps/place/
-        if 'google.com/maps/place/' in url:
-            match = re.search(r"place/([^/]+)", url)
-            if match:
-                return unquote(match.group(1))  # 解碼並返回地點名稱
+        place_match = re.search(r"/place/([^/]+)", url)
+        if place_match:
+            return unquote(place_match.group(1))
 
+        # 若純文字，使用 Google Maps API 查詢
+        result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
+        if result.get("candidates"):
+            return result["candidates"][0]["name"]
     except Exception as e:
-        print(f"解析錯誤: {e}")
-    
+        print(f"❌ 解析錯誤: {e}")
     return None
 
-
-# === webhook ===
+# === Webhook 路由 ===
 @app.route("/callback", methods=['POST'])
 def callback():
     signature = request.headers.get('X-Line-Signature')
     body = request.get_data(as_text=True)
     try:
         handler.handle(body, signature)
-    except Exception as e:
-        print("❌ Webhook Error:", e)
+    except InvalidSignatureError:
         abort(400)
     return 'OK'
 
-# === 處理訊息 ===
+# === 處理文字訊息 ===
 @handler.add(MessageEvent)
 def handle_message(event):
     if not isinstance(event.message, TextMessage):
@@ -117,27 +89,22 @@ def handle_message(event):
 
     reply = ""
 
-    # 新增地點
-    if any(a in msg for a in ADD_ALIASES):
-        place_input = msg.split(maxsplit=1)[-1] if len(msg.split()) > 1 else ""
-        
-        if not place_input:
-            reply = "⚠️ 請提供地點名稱或 Google Maps 網址。"
+    # ➕ 新增地點
+    if any(msg.startswith(alias) for alias in ADD_ALIASES):
+        place_input = msg.split(maxsplit=1)[-1]
+        place_name = resolve_place_name(place_input)
+        if place_name:
+            collection.insert_one({"user_id": user_id, "name": place_name, "comment": None})
+            reply = f"✅ 地點已新增：{place_name}"
         else:
-            place_name = resolve_place_name(place_input)
-            if place_name:
-                collection.insert_one({"user_id": user_id, "name": place_name, "comment": None})
-                reply = f"✅ 地點已新增：{place_name}"
-            else:
-                reply = "⚠️ 無法解析地點網址或名稱。"
+            reply = "⚠️ 無法解析地點網址或名稱。"
 
-    # 顯示清單
+    # 📋 顯示清單
     elif msg in ["地點", "清單"]:
         items = list(collection.find({"user_id": user_id}))
         if not items:
             reply = "📭 尚未新增任何地點"
         else:
-            # 排序南到北（經度）
             def get_lat(loc):
                 try:
                     result = gmaps.geocode(loc["name"])
@@ -153,7 +120,7 @@ def handle_message(event):
                 lines.append(line)
             reply = "📍 地點清單：\n" + "\n".join(lines)
 
-    # 刪除指定地點
+    # 🗑️ 刪除地點
     elif re.search(DELETE_PATTERN, msg):
         index = int(re.search(DELETE_PATTERN, msg).group(1)) - 1
         items = list(collection.find({"user_id": user_id}))
@@ -164,7 +131,7 @@ def handle_message(event):
         else:
             reply = "⚠️ 指定編號無效。"
 
-    # 註解地點
+    # 📝 註解
     elif re.search(COMMENT_PATTERN, msg):
         match = re.search(COMMENT_PATTERN, msg)
         index = int(match.group(1)) - 1
@@ -176,7 +143,7 @@ def handle_message(event):
         else:
             reply = "⚠️ 無法註解，請確認編號正確。"
 
-    # 清空地點（需二次確認）
+    # ❌ 清空
     elif re.match(r"(清空|全部刪除|reset)", msg):
         reply = "⚠️ 是否確認清空所有地點？請輸入 `確認清空`"
 
@@ -184,7 +151,7 @@ def handle_message(event):
         collection.delete_many({"user_id": user_id})
         reply = "✅ 所有地點已清空。"
 
-    # 指令說明
+    # 📘 說明
     elif msg in ["指令", "幫助", "help"]:
         reply = (
             "📘 指令集說明：\n"
@@ -201,7 +168,7 @@ def handle_message(event):
             TextSendMessage(text=reply)
         )
 
-# === 啟動伺服器 ===
+# === 啟動伺服器（Render） ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
