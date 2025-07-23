@@ -47,8 +47,17 @@ import requests
 import re
 from urllib.parse import unquote
 
+import requests
+import re
+from urllib.parse import unquote
+
+import requests
+import re
+from urllib.parse import unquote
+
 def resolve_place_name(input_text):
     try:
+        # 檢查是否為 Google Maps 短網址
         if input_text.startswith("http"):
             # 跟蹤短網址的重定向
             res = requests.get(input_text, allow_redirects=True, timeout=10)
@@ -62,16 +71,12 @@ def resolve_place_name(input_text):
         if match:
             return unquote(match.group(1))  # 解碼 URL，返回地點名稱
 
-        # 進一步處理，如果是從 google.com/maps 發現對應的 URL
+        # 進一步處理，當 URL 包含 google.com/maps/place/
         if 'google.com/maps/place/' in url:
             match = re.search(r"place/([^/]+)", url)
             if match:
-                return unquote(match.group(1))  # 解碼 URL，返回地點名稱
+                return unquote(match.group(1))  # 解碼並返回地點名稱
 
-        # 如果是其他的 Google 地點名稱查詢
-        gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
-        if gmaps_result.get("candidates"):
-            return gmaps_result["candidates"][0]["name"]
     except Exception as e:
         print(f"解析錯誤: {e}")
     
