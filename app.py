@@ -37,15 +37,18 @@ COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
 def resolve_place_name(input_text):
     try:
         if input_text.startswith("http"):
+            # 跟蹤短網址的重定向
             res = requests.get(input_text, allow_redirects=True, timeout=10)
-            url = res.url
+            url = res.url  # 重定向後的最終 URL
         else:
             url = input_text
 
+        # 解析 /place/ 之後的部分來獲取地點名稱
         match = re.search(r"/place/([^/]+)", url)
         if match:
-            return requests.utils.unquote(match.group(1))
+            return requests.utils.unquote(match.group(1))  # 解碼 URL
 
+        # 如果是其他的 Google 地點名稱查詢
         gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
         if gmaps_result.get("candidates"):
             return gmaps_result["candidates"][0]["name"]
@@ -142,12 +145,12 @@ def handle_message(event):
     elif re.match(r"(清空|全部刪除|reset)", msg):
         reply = "⚠️ 是否確認清空所有地點？請輸入 `確認清空`"
 
-    elif msg == "確認":
+    elif msg == "確認清空":
         collection.delete_many({"user_id": user_id})
         reply = "✅ 所有地點已清空。"
 
     # 指令說明
-    elif msg in ["指令", "幫助", "help"]:
+    elif msg in ["指令", "幫助", "help", "清單"]:
         reply = (
             "📘 指令集說明：\n"
             "➕ 新增地點 [地名/地圖網址]\n"
