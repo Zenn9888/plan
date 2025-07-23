@@ -2,7 +2,7 @@ line-bot-sdk==3.17.1
 Flask==2.3.3
 googlemaps==4.10.0
 pymongo==4.7.2
-requests==2.32.0
+requests==2.32.3 
 python-dotenv==1.0.1
 dnspython
 beautifulsoup4==4.12.3
