@@ -41,30 +41,38 @@ COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
 def resolve_place_name(input_text):
     try:
         if input_text.startswith("http"):
-            # 追蹤 Google Maps 短網址
+            print(f"📥 嘗試解析短網址: {input_text}")
             res = requests.get(input_text, allow_redirects=True, timeout=10)
             url = res.url
+            print(f"🔁 重定向後的 URL: {url}")
         else:
             url = input_text
 
-        # ?q= 後的參數
-        q_match = re.search(r"[?&]q=([^&]+)", url)
-        if q_match:
-            return unquote(q_match.group(1))
-
-        # /place/ 後的文字
+        # 優先抓 /place/後面的地點名稱
         place_match = re.search(r"/place/([^/]+)", url)
         if place_match:
-            return unquote(place_match.group(1))
+            place = unquote(place_match.group(1))
+            print(f"✅ 抽出 /place 地點: {place}")
+            return place
 
-        # fallback 用 find_place 拿到 place_id，再查詳細地名
+        # 再抓 ?q= 參數（有時是地址）
+        q_match = re.search(r"[?&]q=([^&]+)", url)
+        if q_match:
+            place = unquote(q_match.group(1))
+            print(f"✅ 抽出 q 地點: {place}")
+            return place
+
+        # 最後 fallback 用 Google Maps API 查
         result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
         if result.get("candidates"):
             place_id = result["candidates"][0]["place_id"]
-            detail = gmaps.place(place_id=place_id, fields=["name"])
-            return detail["result"]["name"]
+            details = gmaps.place(place_id=place_id, fields=["name"])
+            name = details["result"]["name"]
+            print(f"✅ 從 place_id 查得地點名稱: {name}")
+            return name
+
     except Exception as e:
-        print(f"❌ 解析錯誤: {e}")
+        print(f"❌ 地點解析錯誤: {e}")
     return None
 
 
