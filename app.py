@@ -51,7 +51,9 @@ CHINESE_NAME_PATTERN = r'[\u4e00-\u9fff]{2,}'
 ADD_ALIASES = ["新增", "加入", "增加", "+", "加", "增"]
 DELETE_PATTERN = ["刪除", "移除", "del", "delete", "-", "刪", "移"]
 COMMENT_PATTERN = ["註解", "備註", "note", "comment", "註", "*"]
-
+@app.route("/ping", methods=["GET"])
+def ping():
+    return "pong", 200
 def clean_place_title(name):
     name = name.replace("+", " ")
     for delimiter in ['｜', '|', '-', '、', '(', '（']:
