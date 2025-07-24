@@ -74,11 +74,22 @@ def resolve_place_name(user_input):
     try:
         if "maps.app.goo.gl" in user_input:
             logging.info(f"📥 嘗試解析：{user_input}")
-            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"}
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                              "AppleWebKit/537.36 (KHTML, like Gecko) "
+                              "Chrome/115.0.0.0 Safari/537.36"
+            }
             resp = requests.get(user_input, headers=headers, allow_redirects=True, timeout=5)
             redirect_url = resp.url
             logging.info(f"🔁 重定向後 URL: {redirect_url}")
-            if "maps/place/" in redirect_url or "maps/search/" in redirect_url:
+
+            # ✅ 防止進入 Google sorry page
+            if "sorry/index" in redirect_url:
+                logging.warning("⚠️ 被 Google 防爬蟲擋住（進入 CAPTCHA 驗證頁），無法解析。")
+                return "⚠️ Google 防爬蟲阻擋，無法解析地點。"
+
+            # ✅ 如果是正式 Maps 網址，直接交給 API 查詢
+            if "google.com/maps/" in redirect_url:
                 logging.info("📍 偵測為完整地圖頁面，嘗試用 API 查詢")
                 result = gmaps.find_place(input=redirect_url, input_type="textquery", fields=["name"])
                 candidates = result.get("candidates")
@@ -88,49 +99,11 @@ def resolve_place_name(user_input):
                     return name
                 else:
                     logging.warning(f"❌ API 查不到地點：{redirect_url}")
-                    parsed_url = urlparse(redirect_url)
+                    return "⚠️ 無法從網址解析地點"
 
-            # ✅ 處理 /place/
-            if "/place/" in parsed_url.path:
-                parts = parsed_url.path.split("/place/")
-                if len(parts) > 1:
-                    name_part = parts[1].split("/")[0]
-                    name = unquote(name_part)
-# 如果是 place_id 格式，就用 API 查詢
-                    if name.startswith("Eg") or not re.search(CHINESE_NAME_PATTERN, name):
-                        logging.info(f"🔎 偵測到 place_id，嘗試使用 API 查詢：{name}")
-                        result = gmaps.place(place_id=name, fields=["name"])
-                        place = result.get("result", {})
-                        real_name = place.get("name")
-                        if real_name:
-                            logging.info(f"✅ 從 place_id 擷取名稱：{real_name}")
-                            return real_name
-                    else:
-                        cleaned = clean_place_title(name)
-                        logging.info(f"🏷️ 擷取地標名稱（/place/）：{cleaned}")
-                        return cleaned
+            # 其他 fallback 處理略...
 
-
-            # ✅ 處理 ?q=
-            query = parse_qs(parsed_url.query)
-            if "q" in query:
-                raw_q = query["q"][0]
-                raw_q = unquote(raw_q)
-                logging.info(f"📌 擷取 ?q=: {raw_q}")
-                place_name = extract_chinese_name_from_q(raw_q)
-                if place_name:
-                    return place_name
-                logging.warning(f"⚠️ regex 擷取失敗，嘗試用 Google API 查詢：{raw_q}")
-                result = gmaps.find_place(input=raw_q, input_type="textquery", fields=["name"])
-                candidates = result.get("candidates")
-                if candidates:
-                    name = candidates[0].get("name")
-                    logging.info(f"📍 API 擷取地點：{name}")
-                    return name
-                else:
-                    logging.warning(f"❌ API 找不到地點：{raw_q}")
-
-        # ✅ 非短網址：直接查詢 API
+        # ✅ 非短網址：直接查詢
         logging.info(f"🔍 非 maps.app.goo.gl 網址，直接查詢：{user_input}")
         result = gmaps.find_place(input=user_input, input_type="textquery", fields=["name"])
         candidates = result.get("candidates")
@@ -142,7 +115,7 @@ def resolve_place_name(user_input):
             logging.warning(f"❌ API 查無結果：{user_input}")
 
     except Exception as e:
-        logging.warning(f"❌ 最終 fallback 查詢失敗：{user_input}\n{e}")
+        logging.warning(f"❌ 最終 fallback 查詢失敗：{user_input}\\n{e}")
 
     return "⚠️ 無法解析"
 
