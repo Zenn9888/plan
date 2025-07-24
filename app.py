@@ -26,18 +26,15 @@ from linebot.v3.webhooks import (
 )
 from linebot.v3.messaging.models import TextMessage
 
-# === ✅ 設定 Logging ===
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# === ✅ 載入環境變數 ===
 load_dotenv()
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 MONGO_URL = os.getenv("MONGO_URL")
 
-# === ✅ 初始化服務 ===
 app = Flask(__name__)
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 client = MongoClient(MONGO_URL)
@@ -49,8 +46,11 @@ handler = WebhookHandler(CHANNEL_SECRET)
 api_instance = MessagingApi(ApiClient(configuration))
 blob_api = MessagingApiBlob(ApiClient(configuration))
 
-# === ✅ 中文正則與清理函式 ===
 CHINESE_NAME_PATTERN = r'[\u4e00-\u9fff]{2,}'
+
+ADD_ALIASES = ["新增", "加入", "增加", "+", "加", "增"]
+DELETE_PATTERN = ["刪除", "移除", "del", "delete", "-", "刪", "移"]
+COMMENT_PATTERN = ["註解", "備註", "note", "comment", "註", "*"]
 
 def clean_place_title(name):
     name = name.replace("+", " ")
@@ -69,7 +69,6 @@ def extract_chinese_name_from_q(q):
     logging.warning(f"⚠️ 找不到中文地名，fallback 使用原始 q 值：{q}")
     return q
 
-# === ✅ Google Maps 地點名稱解析 ===
 def resolve_place_name(user_input):
     try:
         if "maps.app.goo.gl" in user_input:
@@ -83,19 +82,14 @@ def resolve_place_name(user_input):
             redirect_url = resp.url
             logging.info(f"🔁 重定向後 URL: {redirect_url}")
 
-            # ✅ 如果被導向 Google 防爬蟲頁面
             if "sorry/index" in redirect_url:
                 logging.warning("⚠️ 被 Google 防爬蟲擋住（進入 CAPTCHA 驗證頁），嘗試從 URL 解碼地點名稱")
-
-                # ✅ 嘗試從 URL 中提取 `/maps/place/xxx`
                 match = re.search(r"/maps/place/([^/]+)", redirect_url)
                 if match:
                     encoded_name = match.group(1)
                     decoded_name = unquote(unquote(encoded_name))
                     logging.info(f"📦 解碼地點名稱：{decoded_name}")
-
-                    # ✅ 用 Google Maps API 查詢
-                    result = gmaps.find_place(input=decoded_name, input_type="textquery", fields=["name"])
+                    result = gmaps.find_place(input=decoded_name, input_type="textquery", fields=["name"], language="zh-TW")
                     candidates = result.get("candidates")
                     if candidates:
                         name = candidates[0].get("name")
@@ -103,14 +97,11 @@ def resolve_place_name(user_input):
                         return name
                     else:
                         logging.warning("❌ fallback API 查不到地點")
-
-                # ✅ fallback 失敗提示
                 return "⚠️ Google 阻擋短網址解析，請改貼地點名稱或完整網址"
 
-            # ✅ 若 redirect 成正常網址，直接丟 API 查
             if "google.com/maps/" in redirect_url:
                 logging.info("📍 偵測為完整地圖頁面，嘗試用 API 查詢")
-                result = gmaps.find_place(input=redirect_url, input_type="textquery", fields=["name"])
+                result = gmaps.find_place(input=redirect_url, input_type="textquery", fields=["name"], language="zh-TW")
                 candidates = result.get("candidates")
                 if candidates:
                     name = candidates[0].get("name")
@@ -120,9 +111,8 @@ def resolve_place_name(user_input):
                     logging.warning(f"❌ API 查不到地點：{redirect_url}")
                     return "⚠️ 無法從網址解析地點"
 
-        # ✅ 非短網址時直接查詢
         logging.info(f"🔍 非 maps.app.goo.gl 網址，直接查詢：{user_input}")
-        result = gmaps.find_place(input=user_input, input_type="textquery", fields=["name"])
+        result = gmaps.find_place(input=user_input, input_type="textquery", fields=["name"], language="zh-TW")
         candidates = result.get("candidates")
         if candidates:
             name = candidates[0].get("name")
@@ -136,12 +126,6 @@ def resolve_place_name(user_input):
 
     return "⚠️ 無法解析"
 
-# === ✅ 指令集別名 ===
-ADD_ALIASES = ["新增", "加入", "增加", "+", "加", "增"]
-DELETE_PATTERN = ["刪除", "移除", "del", "delete", "-", "刪", "移"]
-COMMENT_PATTERN = ["註解", "備註", "note", "comment", "註", "*"]
-
-# === ✅ Webhook 入口 ===
 @app.route("/callback", methods=["POST"])
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
@@ -153,7 +137,6 @@ def callback():
         abort(400)
     return "OK"
 
-# === ✅ 訊息處理主函式 ===
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     msg = event.message.text.strip()
@@ -164,42 +147,39 @@ def handle_message(event):
 
     reply = ""
 
-    # === ➕ 新增地點 ===
     if any(alias in msg for alias in ADD_ALIASES):
         print("✅ 進入新增地點流程")
-        raw_input = msg.split(maxsplit=1)[-1].strip()
+        parts = msg.split(maxsplit=1)
+        if len(parts) < 2:
+            reply = "⚠️ 請提供要新增的地點，例如：新增 台北101 或 新增 https://maps.app.goo.gl/..."
+        else:
+            raw_input = parts[1].strip()
+            added = []
+            failed = []
+            for line in raw_input.splitlines():
+                line = line.strip()
+                print(f"🧾 處理輸入行：{line}")
+                if not line:
+                    continue
+                place_name = resolve_place_name(line)
+                print(f"📍 取得地點名稱：{place_name}")
+                if place_name and not place_name.startswith("⚠️"):
+                    simplified_name = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", place_name)
+                    collection.insert_one({
+                        "user_id": user_id,
+                        "name": simplified_name,
+                        "comment": None
+                    })
+                    added.append(simplified_name)
+                else:
+                    failed.append(line)
+            if added:
+                reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added)
+            if failed:
+                reply += "\n⚠️ 無法解析以下內容：\n" + "\n".join(f"- {item}" for item in failed)
+            if not reply:
+                reply = "⚠️ 沒有成功新增任何地點。"
 
-        added = []
-        failed = []
-
-        for line in raw_input.splitlines():
-            line = line.strip()
-            print(f"🧾 處理輸入行：{line}")
-            if not line:
-                continue
-
-            place_name = resolve_place_name(line)
-            print(f"📍 取得地點名稱：{place_name}")
-
-            if place_name:
-                simplified_name = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", place_name)
-                collection.insert_one({
-                    "user_id": user_id,
-                    "name": simplified_name,
-                    "comment": None
-                })
-                added.append(simplified_name)
-            else:
-                failed.append(line)
-
-        if added:
-            reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added)
-        if failed:
-            reply += "\n⚠️ 無法解析以下內容：\n" + "\n".join(f"- {item}" for item in failed)
-        if not reply:
-            reply = "⚠️ 沒有成功新增任何地點。"
-
-    # === 📋 顯示清單 ===
     elif msg in ["地點", "清單"]:
         items = list(collection.find({"user_id": user_id}))
         if not items:
@@ -220,7 +200,6 @@ def handle_message(event):
                 lines.append(line)
             reply = "📍 地點清單：\n" + "\n".join(lines)
 
-    # === 🗑️ 刪除地點 ===
     elif any(key in msg for key in DELETE_PATTERN):
         match = re.search(r"(\d+)", msg)
         if match:
@@ -233,7 +212,6 @@ def handle_message(event):
             else:
                 reply = "⚠️ 指定編號無效。"
 
-    # === 📝 註解地點 ===
     elif any(key in msg for key in COMMENT_PATTERN):
         match = re.search(r"(\d+)[\s:：]*(.+)", msg)
         if match:
@@ -246,15 +224,13 @@ def handle_message(event):
             else:
                 reply = "⚠️ 無法註解，請確認編號正確。"
 
-    # === ❌ 清空清單 ===
-    elif re.match(r"(清空|全部刪除|reset)", msg):
+    elif re.match(r"(清空|全部刪除|reset|清除))", msg):
         reply = "⚠️ 是否確認清空所有地點？請輸入 `確認清空`"
 
     elif msg == "確認清空":
         collection.delete_many({"user_id": user_id})
         reply = "✅ 所有地點已清空。"
 
-    # === 📘 指令說明 ===
     elif msg in ["指令", "幫助", "help"]:
         reply = (
             "📘 指令集說明：\n"
@@ -265,7 +241,6 @@ def handle_message(event):
             "❌ 清空：刪除所有地點（需再次確認）"
         )
 
-    # === ✉️ 傳送回覆 ===
     if reply:
         try:
             print("🧪 REPLY_TOKEN:", event.reply_token)
@@ -279,7 +254,6 @@ def handle_message(event):
         except Exception as e:
             print("❌ 回覆訊息錯誤:", e)
 
-# === ✅ 啟動伺服器 ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=True)
