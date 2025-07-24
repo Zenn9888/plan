@@ -19,7 +19,8 @@ from linebot.v3.webhooks import (
     MessageEvent,
     TextMessageContent,
 )
-from linebot.v3.models import TextMessage
+from linebot.v3.messaging.models import TextMessage
+
 
 # === ✅ 載入環境變數 ===
 load_dotenv()
