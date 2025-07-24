@@ -172,14 +172,18 @@ def handle_message(event):
     # === ✉️ 傳送回覆 ===
     if reply:
         try:
+            print("🧪 REPLY_TOKEN:", event.reply_token)
+            print("🧪 REPLY_TEXT:", reply)
+
             api_instance.reply_message(
                 ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply)]
-                )
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=reply)]
             )
+        )
         except Exception as e:
             print("❌ 回覆訊息錯誤:", e)
+
 
 # === ✅ 啟動伺服器 ===
 if __name__ == "__main__":
