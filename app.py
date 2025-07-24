@@ -27,7 +27,7 @@ load_dotenv()
 CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
-MONGO_URL = os.getenv("MONGO_URL", "mongodb://localhost:27017")
+MONGO_URL = os.getenv("MONGO_URL")
 
 # === ✅ 初始化服務 ===
 app = Flask(__name__)
@@ -71,10 +71,10 @@ def resolve_place_name(input_text):
             address_text = unquote(q_match.group(1))
             print(f"📌 擷取 ?q=: {address_text}")
             # 這裡才是正解：用地址查地名
-            result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"])
+            result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"], language="zh-TW")
             if result.get("candidates"):
                 place_id = result["candidates"][0]["place_id"]
-                details = gmaps.place(place_id=place_id, fields=["name"])
+                details = gmaps.place(place_id=place_id, fields=["name"], language="zh-TW")
                 name = details["result"]["name"]
                 print(f"✅ API 解析名稱：{name}")
                 return name
