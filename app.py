@@ -180,27 +180,30 @@ def handle_message(event):
             reply = "📍 地點清單：\n" + "\n".join(lines)
 
     # === 🗑️ 刪除地點 ===
-    elif re.search(DELETE_PATTERN, msg):
-        index = int(re.search(DELETE_PATTERN, msg).group(1)) - 1
-        items = list(collection.find({"user_id": user_id}))
-        if 0 <= index < len(items):
-            name = items[index]["name"]
-            collection.delete_one({"_id": items[index]["_id"]})
-            reply = f"🗑️ 已刪除地點：{name}"
-        else:
-            reply = "⚠️ 指定編號無效。"
+    elif any(key in msg for key in DELETE_KEYWORDS):
+        match = re.search(r"(\d+)", msg)
+        if match:
+            index = int(re.search(DELETE_PATTERN, msg).group(1)) - 1
+            items = list(collection.find({"user_id": user_id}))
+            if 0 <= index < len(items):
+                name = items[index]["name"]
+                collection.delete_one({"_id": items[index]["_id"]})
+                reply = f"🗑️ 已刪除地點：{name}"
+            else:
+                reply = "⚠️ 指定編號無效。"
 
     # === 📝 註解地點 ===
-    elif re.search(COMMENT_PATTERN, msg):
-        match = re.search(COMMENT_PATTERN, msg)
-        index = int(match.group(1)) - 1
-        comment = match.group(2)
-        items = list(collection.find({"user_id": user_id}))
-        if 0 <= index < len(items):
-            collection.update_one({"_id": items[index]["_id"]}, {"$set": {"comment": comment}})
-            reply = f"📝 已更新註解：{items[index]['name']} → {comment}"
-        else:
-            reply = "⚠️ 無法註解，請確認編號正確。"
+    elif any(key in msg for key in COMMENT_KEYWORDS):
+        match = re.search(r"(\d+)[\s:：]*(.+)", msg)
+        if match:
+            index = int(match.group(1)) - 1
+            comment = match.group(2)
+            items = list(collection.find({"user_id": user_id}))
+            if 0 <= index < len(items):
+                collection.update_one({"_id": items[index]["_id"]}, {"$set": {"comment": comment}})
+                reply = f"📝 已更新註解：{items[index]['name']} → {comment}"
+            else:
+                reply = "⚠️ 無法註解，請確認編號正確。"
 
     # === ❌ 清空清單（確認機制） ===
     elif re.match(r"(清空|全部刪除|reset)", msg):
