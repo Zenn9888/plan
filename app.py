@@ -42,9 +42,10 @@ api_instance = MessagingApi(ApiClient(configuration))
 blob_api = MessagingApiBlob(ApiClient(configuration))
 
 # === ✅ 指令集別名與正則 ===
-ADD_ALIASES = ["新增", "加入", "增加"]
-DELETE_PATTERN = r"刪除 (\d+)"
-COMMENT_PATTERN = r"註解 (\d+)[\s:：]*(.+)"
+ADD_ALIASES = ["新增", "加入", "增加", "+", "加", "增"]
+DELETE_PATTERN = ["刪除", "移除", "del", "delete","-","刪","移"]
+COMMENT_PATTERN = ["註解", "備註", "note", "comment","註","*"]
+
 
 # === ✅ 解析 Google Maps 短網址成地名 ===
 def resolve_place_name(input_text):
@@ -118,7 +119,7 @@ def handle_message(event):
 
     # === ➕ 新增地點 ===
     if any(alias in msg for alias in ADD_ALIASES):
-    raw_input = msg.split(maxsplit=1)[-1].strip()
+        raw_input = msg.split(maxsplit=1)[-1].strip()
 
     added = []
     failed = []
@@ -198,7 +199,7 @@ def handle_message(event):
     elif re.match(r"(清空|全部刪除|reset)", msg):
         reply = "⚠️ 是否確認清空所有地點？請輸入 `確認清空`"
 
-    elif msg == "確認清空":
+    elif msg == "確認":
         collection.delete_many({"user_id": user_id})
         reply = "✅ 所有地點已清空。"
 
