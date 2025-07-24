@@ -74,7 +74,7 @@ def resolve_place_name(user_input):
     try:
         if "maps.app.goo.gl" in user_input:
             logging.info(f"📥 嘗試解析：{user_input}")
-            headers = {"User-Agent": "Mozilla/5.0"}
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"}
             resp = requests.get(user_input, headers=headers, allow_redirects=True, timeout=5)
             redirect_url = resp.url
             logging.info(f"🔁 重定向後 URL: {redirect_url}")
