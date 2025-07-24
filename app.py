@@ -72,8 +72,8 @@ def resolve_place_name(input_text):
         gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
         if gmaps_result.get("candidates"):
             place_id = gmaps_result["candidates"][0]["place_id"]
-            details = gmaps.place(place_id=place_id, fields=["name", "formatted_address"])
-            name = details["result"].get("name") or details["result"].get("formatted_address")
+            details = gmaps.place(place_id=place_id, fields=["name"])
+            name = details["result"]["name"]
             print(f"✅ API 回傳地點名稱：{name}")
             return name
 
