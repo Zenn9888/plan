@@ -2,6 +2,9 @@ import os
 import re
 import requests
 import googlemaps
+import hmac
+import hashlib
+import base64
 from dotenv import load_dotenv
 from flask import Flask, request, abort
 from pymongo import MongoClient
@@ -46,6 +49,10 @@ ADD_ALIASES = ["新增", "加入", "增加", "+", "加", "增"]
 DELETE_PATTERN = ["刪除", "移除", "del", "delete","-","刪","移"]
 COMMENT_PATTERN = ["註解", "備註", "note", "comment","註","*"]
 
+def verify_signature(secret, body, signature):
+    hash = hmac.new(secret.encode('utf-8'), body.encode('utf-8'), hashlib.sha256).digest()
+    computed_signature = base64.b64encode(hash).decode('utf-8')
+    return hmac.compare_digest(computed_signature, signature)
 
 # === ✅ 解析 Google Maps 短網址成地名 ===
 def resolve_place_name(input_text):
