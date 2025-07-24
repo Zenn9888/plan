@@ -193,7 +193,7 @@ def handle_message(event):
                 reply = "⚠️ 指定編號無效。"
 
     # === 📝 註解地點 ===
-    elif any(key in msg for key in COMMENT_KEYWORDS):
+    elif any(key in msg for key in COMMENT_PATTERN):
         match = re.search(r"(\d+)[\s:：]*(.+)", msg)
         if match:
             index = int(match.group(1)) - 1
