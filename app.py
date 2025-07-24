@@ -143,38 +143,43 @@ def handle_message(event):
     reply = ""
 
     # === ➕ 新增地點 ===
-    if any(alias in msg for alias in ADD_ALIASES):
-        logger.info("✅ 進入新增地點流程")
-        raw_input = msg.split(maxsplit=1)[-1].strip()
+    # === ➕ 新增地點 ===
+if any(alias in msg for alias in ADD_ALIASES):
+    print("✅ 進入新增地點流程")
+    raw_input = msg.split(maxsplit=1)[-1].strip()
 
-        added = []
-        failed = []
+    added = []
+    failed = []
 
-        for line in raw_input.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            place_name = resolve_place_name(line)
-            if place_name:
-                # 簡化名稱，只保留最後的地標名稱（排除地址）
-                simplified_name = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", place_name)
-                collection.insert_one({
-                    "user_id": user_id,
-                    "name": simplified_name,
-                    "comment": None
-                })
-                added.append(simplified_name)
-            else:
-                failed.append(line)
+    for line in raw_input.splitlines():
+        line = line.strip()
+        print(f"🧾 處理輸入行：{line}")  # ✅ 新增這行
+        if not line:
+            continue
 
-        reply = ""
-        if added:
-            reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added)
-        if failed:
-            reply += "\n⚠️ 無法解析以下內容：\n" + "\n".join(f"- {item}" for item in failed)
+        place_name = resolve_place_name(line)
+        print(f"📍 取得地點名稱：{place_name}")  # ✅ 新增這行
 
-        if not reply:
-            reply = "⚠️ 沒有成功新增任何地點。"
+        if place_name:
+            simplified_name = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", place_name)
+            collection.insert_one({
+                "user_id": user_id,
+                "name": simplified_name,
+                "comment": None
+            })
+            added.append(simplified_name)
+        else:
+            failed.append(line)
+
+    reply = ""
+    if added:
+        reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added)
+    if failed:
+        reply += "\n⚠️ 無法解析以下內容：\n" + "\n".join(f"- {item}" for item in failed)
+
+    if not reply:
+        reply = "⚠️ 沒有成功新增任何地點。"
+
 
     # === 📋 顯示清單（排序南到北） ===
     elif msg in ["地點", "清單"]:
