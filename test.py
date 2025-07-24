@@ -1,63 +1,102 @@
+import os
 import re
 import requests
+import logging
 import googlemaps
-from urllib.parse import unquote
-import os
+from urllib.parse import urlparse, parse_qs, unquote
 from dotenv import load_dotenv
 
-# ✅ 載入 API 金鑰（記得先建立 .env 檔案並設定 GOOGLE_MAPS_API_KEY）
+# ✅ 載入 .env
 load_dotenv()
-GOOGLE_API_KEY = "AIzaSyC23VZqlnI8HYAgMA6C_2a0u1umq8UOfvs"
+GOOGLE_API_KEY ="AIzaSyC23VZqlnI8HYAgMA6C_2a0u1umq8UOfvs"
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 
-def resolve_place_name(input_text):
+# ✅ 初始化 logger
+logging.basicConfig(level=logging.INFO)
+
+# ✅ 中文正則表達式
+CHINESE_NAME_PATTERN = r'[\u4e00-\u9fff]{2,}'
+
+# ✅ 清理地點標題：擷取主要名稱（丟掉 + 推薦字串）
+def clean_place_title(name):
+    # ✅ 將 + 號轉空格
+    name = name.replace("+", " ")
+    for delimiter in ['｜', '|', '-', '、', '(', '（']:
+        name = name.split(delimiter)[0]
+    cleaned = name.strip()
+    logging.info(f"✨ 清理後名稱：{cleaned}")
+    return cleaned
+
+# ✅ 優先從 ?q= 地址擷取地標名稱
+def extract_chinese_name_from_q(q):
+    chinese_matches = re.findall(CHINESE_NAME_PATTERN, q)
+    if chinese_matches:
+        name = chinese_matches[-1]
+        logging.info(f"🏷️ 擷取地標名稱：{name}")
+        return name
+    logging.warning(f"⚠️ 找不到中文地名，fallback 使用原始 q 值：{q}")
+    return q
+
+# ✅ 主函式：輸入網址或地名 → 回傳簡化後名稱
+def resolve_place_name(user_input):
     try:
-        print(f"📥 嘗試解析：{input_text}")
+        if "maps.app.goo.gl" in user_input:
+            logging.info(f"📥 嘗試解析：{user_input}")
+            headers = {"User-Agent": "Mozilla/5.0"}
+            resp = requests.get(user_input, headers=headers, allow_redirects=True, timeout=5)
+            redirect_url = resp.url
+            logging.info(f"🔁 重定向後 URL: {redirect_url}")
 
-        if input_text.startswith("http"):
-            res = requests.get(input_text, allow_redirects=True, timeout=10)
-            url = res.url
-            print(f"🔁 重定向後 URL: {url}")
+            parsed_url = urlparse(redirect_url)
+
+            # ✅ 處理 /place/
+            if "/place/" in parsed_url.path:
+                parts = parsed_url.path.split("/place/")
+                if len(parts) > 1:
+                    name_part = parts[1].split("/")[0]
+                    name = unquote(name_part)
+                    if re.search(CHINESE_NAME_PATTERN, name):
+                        cleaned = clean_place_title(name)
+                        logging.info(f"🏷️ 擷取地標名稱（/place/）：{cleaned}")
+                        return cleaned
+
+            # ✅ 處理 ?q=
+            query = parse_qs(parsed_url.query)
+            if "q" in query:
+                raw_q = query["q"][0]
+                raw_q = unquote(raw_q)
+                logging.info(f"📌 擷取 ?q=: {raw_q}")
+                place_name = extract_chinese_name_from_q(raw_q)
+                if place_name:
+                    return place_name
+                logging.warning(f"⚠️ regex 擷取失敗，嘗試用 Google API 查詢：{raw_q}")
+                result = gmaps.find_place(input=raw_q, input_type="textquery", fields=["name"])
+                candidates = result.get("candidates")
+                if candidates:
+                    name = candidates[0].get("name")
+                    logging.info(f"📍 API 擷取地點：{name}")
+                    return name
+                else:
+                    logging.warning(f"❌ API 找不到地點：{raw_q}")
+
+        # ✅ 非短網址：直接查詢 API
+        logging.info(f"🔍 非 maps.app.goo.gl 網址，直接查詢：{user_input}")
+        result = gmaps.find_place(input=user_input, input_type="textquery", fields=["name"])
+        candidates = result.get("candidates")
+        if candidates:
+            name = candidates[0].get("name")
+            logging.info(f"📍 API 直接查詢結果：{name}")
+            return name
         else:
-            url = input_text
-
-        # 1️⃣ /place/ 直接擷取名稱
-        place_match = re.search(r"/place/([^/]+)", url)
-        if place_match:
-            name = unquote(place_match.group(1))
-            print(f"🏷️ 擷取 /place/: {name}")
-            return name
-
-        # 2️⃣ 如果網址中含有 q=（用 API 查）
-        q_match = re.search(r"[?&]q=([^&]+)", url)
-        if q_match:
-            address_text = unquote(q_match.group(1))
-            print(f"📌 擷取 ?q=: {address_text}")
-            result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"])
-            if result.get("candidates"):
-                place_id = result["candidates"][0]["place_id"]
-                details = gmaps.place(place_id=place_id, fields=["name"])
-                name = details["result"]["name"]
-                print(f"✅ API 解析名稱：{name}")
-                return name
-
-        # 3️⃣ fallback：直接查詢文字
-        result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
-        if result.get("candidates"):
-            place_id = result["candidates"][0]["place_id"]
-            details = gmaps.place(place_id=place_id, fields=["name"])
-            name = details["result"]["name"]
-            print(f"✅ 最終 API 名稱：{name}")
-            return name
+            logging.warning(f"❌ API 查無結果：{user_input}")
 
     except Exception as e:
-        print(f"❌ 錯誤：{e}")
+        logging.warning(f"❌ 最終 fallback 查詢失敗：{user_input}\n{e}")
 
-    return None
+    return "⚠️ 無法解析"
 
-# ✅ 測試用
+# ✅ 測試
 if __name__ == "__main__":
-    # 可替換為其他 Google Maps 短網址
-    test_input = "https://maps.app.goo.gl/q3f2TKiwyu5XkcWj6"
-    name = resolve_place_name(test_input)
-    print("測試結果：", name if name else "⚠️ 無法解析")
+    test_url = "https://maps.app.goo.gl/gtzRjywdwEXhio437"
+    result = resolve_place_name(test_url)
+    print("測試結果：", result)
