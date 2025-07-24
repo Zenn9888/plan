@@ -5,6 +5,11 @@ import googlemaps
 import hmac
 import hashlib
 import base64
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
+
 from dotenv import load_dotenv
 from flask import Flask, request, abort
 from pymongo import MongoClient
@@ -57,72 +62,46 @@ def verify_signature(secret, body, signature):
 # === ✅ 解析 Google Maps 短網址成地名 ===
 def resolve_place_name(input_text):
     try:
-        print(f"📥 嘗試解析：{input_text}")
-
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-        }
+        logger.info(f"📥 嘗試解析：{input_text}")
 
         if input_text.startswith("http"):
-            try:
-                res = requests.get(input_text, headers=headers, allow_redirects=True, timeout=3)
-                url = res.url
-                print(f"🔁 重定向後 URL: {url}")
-
-                if "google.com/sorry" in url:
-                    print("⚠️ 被 Google 封鎖，出現 sorry 頁面")
-                    return None
-            except requests.exceptions.RequestException as e:
-                print(f"❌ 短網址請求錯誤：{e}")
-                return None
+            res = requests.get(input_text, allow_redirects=True, timeout=10)
+            url = res.url
+            logger.info(f"🔁 重定向後 URL: {url}")
         else:
             url = input_text
-            print(f"🔤 非網址輸入，直接使用：{url}")
 
-        # 1️⃣ 嘗試擷取 /place/ 地點
+        # 1️⃣ 如果網址中有 /place/，直接擷取地名
         place_match = re.search(r"/place/([^/]+)", url)
         if place_match:
             name = unquote(place_match.group(1))
-            print(f"🏷️ 成功從 /place/ 擷取名稱：{name}")
+            logger.info(f"🏷️ 擷取 /place/: {name}")
             return name
-        else:
-            print("❌ 未找到 /place/ 格式")
 
-        # 2️⃣ 嘗試解析 ?q= 地址轉換為地點名稱
+        # 2️⃣ 如果網址中有 q=，用 q 查地點
         q_match = re.search(r"[?&]q=([^&]+)", url)
         if q_match:
             address_text = unquote(q_match.group(1))
-            print(f"📌 擷取 ?q= 地址：{address_text}")
-            try:
-                result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"])
-                if result.get("candidates"):
-                    place_id = result["candidates"][0]["place_id"]
-                    details = gmaps.place(place_id=place_id, fields=["name"])
-                    name = details["result"]["name"]
-                    print(f"✅ 成功透過地址查詢地名：{name}")
-                    return name
-                else:
-                    print("❌ find_place (q=查詢) 無候選結果")
-            except Exception as e:
-                print(f"❌ find_place (q=查詢) 發生錯誤：{e}")
-        else:
-            print("❌ 未包含 ?q= 參數")
+            logger.info(f"📌 擷取 ?q=: {address_text}")
+            result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"])
+            if result.get("candidates"):
+                place_id = result["candidates"][0]["place_id"]
+                details = gmaps.place(place_id=place_id, fields=["name"])
+                name = details["result"]["name"]
+                logger.info(f"✅ API 解析名稱：{name}")
+                return name
 
-        # 3️⃣ 最後 fallback 查詢
-        print(f"📡 最終 fallback 嘗試查詢：{input_text}")
+        # 3️⃣ 最後 fallback：直接查原始輸入
         result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
         if result.get("candidates"):
             place_id = result["candidates"][0]["place_id"]
             details = gmaps.place(place_id=place_id, fields=["name"])
             name = details["result"]["name"]
-            print(f"✅ fallback 成功取得名稱：{name}")
+            logger.info(f"✅ 最終 API 名稱：{name}")
             return name
-        else:
-            print("❌ fallback 無法找到地點")
 
     except Exception as e:
-        print(f"❌ 總體解析錯誤：{e}")
-
+        logger.exception(f"❌ 錯誤：{e}")
     return None
 
 
@@ -154,6 +133,7 @@ def handle_message(event):
 
     # === ➕ 新增地點 ===
     if any(alias in msg for alias in ADD_ALIASES):
+        logger.info("✅ 進入新增地點流程")
         raw_input = msg.split(maxsplit=1)[-1].strip()
 
         added = []
@@ -271,4 +251,4 @@ def handle_message(event):
 # === ✅ 啟動伺服器 ===
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port,debug=True)
