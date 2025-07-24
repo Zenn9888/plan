@@ -73,12 +73,11 @@ def resolve_place_name(input_text):
             print(f"🏷️ 擷取 /place/: {name}")
             return name
 
-        # 2️⃣ 如果網址中有 q=，不要直接用，改用 q 的值去查 API 取得地點名稱
+        # 2️⃣ 如果網址中有 q=，用 q 的值去查 Google Maps API 取得地點名稱
         q_match = re.search(r"[?&]q=([^&]+)", url)
         if q_match:
             address_text = unquote(q_match.group(1))
             print(f"📌 擷取 ?q=: {address_text}")
-            # 查詢 Place Name
             result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"], language="zh-TW")
             if result.get("candidates"):
                 place_id = result["candidates"][0]["place_id"]
@@ -87,7 +86,7 @@ def resolve_place_name(input_text):
                 print(f"✅ API 解析名稱：{name}")
                 return name
 
-        # 3️⃣ fallback：純地名查詢
+        # 3️⃣ fallback：直接查輸入值
         result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"], language="zh-TW")
         if result.get("candidates"):
             place_id = result["candidates"][0]["place_id"]
@@ -97,7 +96,7 @@ def resolve_place_name(input_text):
             return name
 
     except Exception as e:
-        print(f"❌ 地點解析錯誤: {e}")
+        print(f"❌ 錯誤：{e}")
     return None
 
 
