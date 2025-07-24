@@ -91,7 +91,7 @@ def resolve_place_name(user_input):
                 match = re.search(r"/maps/place/([^/]+)", redirect_url)
                 if match:
                     encoded_name = match.group(1)
-                    decoded_name = unquote(encoded_name)
+                    decoded_name = unquote(unquote(encoded_name))
                     logging.info(f"📦 解碼地點名稱：{decoded_name}")
 
                     # ✅ 用 Google Maps API 查詢
