@@ -64,20 +64,10 @@ def resolve_place_name(input_text):
     try:
         print(f"📥 嘗試解析：{input_text}")
 
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/114.0.0.0 Safari/537.36"
-        }
-
-        # 若為網址，先嘗試重導
         if input_text.startswith("http"):
-            res = requests.get(input_text, headers=headers, allow_redirects=True, timeout=10)
+            res = requests.get(input_text, allow_redirects=True, timeout=10)
             url = res.url
             print(f"🔁 重定向後 URL: {url}")
-
-            # ⚠️ 偵測是否被擋
-            if "sorry/index" in url:
-                print("❌ 被 Google 判定為異常流量（Sorry Page）")
-                return None
         else:
             url = input_text
 
@@ -88,20 +78,18 @@ def resolve_place_name(input_text):
             print(f"🏷️ 擷取 /place/: {name}")
             return name
 
-        # 2️⃣ 如果網址中有 ?q=，用其值查 API 確認地名
+        # 2️⃣ 如果網址中有 q=，擷取並簡化地點名稱（只留地標名）
         q_match = re.search(r"[?&]q=([^&]+)", url)
         if q_match:
             address_text = unquote(q_match.group(1))
             print(f"📌 擷取 ?q=: {address_text}")
-            result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"])
-            if result.get("candidates"):
-                place_id = result["candidates"][0]["place_id"]
-                details = gmaps.place(place_id=place_id, fields=["name"])
-                name = details["result"]["name"]
-                print(f"✅ API 解析名稱：{name}")
-                return name
 
-        # 3️⃣ fallback：直接用輸入文字查
+            # ✅ 精簡地標名稱（移除前面地址）
+            simplified = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", address_text)
+            print(f"🏷️ 精簡地名：{simplified}")
+            return simplified
+
+        # 3️⃣ 最後 fallback：直接查輸入值
         result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
         if result.get("candidates"):
             place_id = result["candidates"][0]["place_id"]
@@ -113,10 +101,6 @@ def resolve_place_name(input_text):
     except Exception as e:
         print(f"❌ 錯誤：{e}")
     return None
-
-
-
-
 
 
 # === ✅ Webhook 入口 ===
