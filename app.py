@@ -165,12 +165,15 @@ def handle_message(event):
                 print(f"📍 取得地點名稱：{place_name}")
                 if place_name and not place_name.startswith("⚠️"):
                     simplified_name = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", place_name)
+                    if not simplified_name.strip():
+                        simplified_name = place_name
                     collection.insert_one({
                         "user_id": user_id,
                         "name": simplified_name,
                         "comment": None
                     })
                     added.append(simplified_name)
+
                 else:
                     failed.append(line)
             if added:
