@@ -180,7 +180,7 @@ def handle_message(event):
             reply = "📍 地點清單：\n" + "\n".join(lines)
 
     # === 🗑️ 刪除地點 ===
-    elif any(key in msg for key in DELETE_KEYWORDS):
+    elif any(key in msg for key in DELETE_PATTERN):
         match = re.search(r"(\d+)", msg)
         if match:
             index = int(re.search(DELETE_PATTERN, msg).group(1)) - 1
