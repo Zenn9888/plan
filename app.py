@@ -183,7 +183,7 @@ def handle_message(event):
     elif any(key in msg for key in DELETE_PATTERN):
         match = re.search(r"(\d+)", msg)
         if match:
-            index = int(re.search(DELETE_PATTERN, msg).group(1)) - 1
+            index = int(match.group(1)) - 1
             items = list(collection.find({"user_id": user_id}))
             if 0 <= index < len(items):
                 name = items[index]["name"]
