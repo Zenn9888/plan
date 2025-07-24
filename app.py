@@ -78,8 +78,17 @@ def resolve_place_name(user_input):
             resp = requests.get(user_input, headers=headers, allow_redirects=True, timeout=5)
             redirect_url = resp.url
             logging.info(f"🔁 重定向後 URL: {redirect_url}")
-
-            parsed_url = urlparse(redirect_url)
+            if "maps/place/" in redirect_url or "maps/search/" in redirect_url:
+                logging.info("📍 偵測為完整地圖頁面，嘗試用 API 查詢")
+                result = gmaps.find_place(input=redirect_url, input_type="textquery", fields=["name"])
+                candidates = result.get("candidates")
+                if candidates:
+                    name = candidates[0].get("name")
+                    logging.info(f"📍 API 擷取地點：{name}")
+                    return name
+                else:
+                    logging.warning(f"❌ API 查不到地點：{redirect_url}")
+                    parsed_url = urlparse(redirect_url)
 
             # ✅ 處理 /place/
             if "/place/" in parsed_url.path:
