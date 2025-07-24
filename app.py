@@ -149,39 +149,47 @@ def handle_message(event):
 
     if any(alias in msg for alias in ADD_ALIASES):
         print("✅ 進入新增地點流程")
-        parts = msg.split(maxsplit=1)
-        if len(parts) < 2:
-            reply = "⚠️ 請提供要新增的地點，例如：新增 台北101 或 新增 https://maps.app.goo.gl/..."
-        else:
-            raw_input = parts[1].strip()
-            added = []
-            failed = []
-            for line in raw_input.splitlines():
-                line = line.strip()
-                print(f"🧾 處理輸入行：{line}")
-                if not line:
-                    continue
-                place_name = resolve_place_name(line)
-                print(f"📍 取得地點名稱：{place_name}")
-                if place_name and not place_name.startswith("⚠️"):
-                    simplified_name = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", place_name)
-                    if not simplified_name.strip():
-                        simplified_name = place_name
-                    collection.insert_one({
-                        "user_id": user_id,
-                        "name": simplified_name,
-                        "comment": None
-                    })
-                    added.append(simplified_name)
+        raw_input = msg.split(maxsplit=1)[-1].strip()
 
-                else:
-                    failed.append(line)
-            if added:
-                reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added)
-            if failed:
-                reply += "\n⚠️ 無法解析以下內容：\n" + "\n".join(f"- {item}" for item in failed)
-            if not reply:
-                reply = "⚠️ 沒有成功新增任何地點。"
+        if raw_input in ADD_ALIASES or raw_input == "":
+            reply = "⚠️ 請在指令後輸入地點名稱或地圖網址。"
+            api_instance.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply)]
+                )
+            )
+            return
+
+        added = []
+        failed = []
+        for line in raw_input.splitlines():
+            line = line.strip()
+            print(f"🧾 處理輸入行：{line}")
+            if not line:
+                continue
+            place_name = resolve_place_name(line)
+            print(f"📍 取得地點名稱：{place_name}")
+            if place_name and not place_name.startswith("⚠️"):
+                simplified_name = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", place_name)
+                if not simplified_name.strip():
+                    simplified_name = place_name
+                collection.insert_one({
+                    "user_id": user_id,
+                    "name": simplified_name,
+                    "comment": None
+                })
+                added.append(simplified_name)
+            else:
+                failed.append(line)
+
+        reply = ""
+        if added:
+            reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added)
+        if failed:
+            reply += "\n⚠️ 無法解析以下內容：\n" + "\n".join(f"- {item}" for item in failed)
+        if not reply:
+            reply = "⚠️ 沒有成功新增任何地點。"
 
     elif msg in ["地點", "清單"]:
         items = list(collection.find({"user_id": user_id}))
@@ -227,7 +235,7 @@ def handle_message(event):
             else:
                 reply = "⚠️ 無法註解，請確認編號正確。"
 
-    elif re.match(r"(清空|全部刪除|reset|清除))", msg):
+    elif re.match(r"(清空|全部刪除|reset|清除)", msg):
         reply = "⚠️ 是否確認清空所有地點？請輸入 `確認清空`"
 
     elif msg == "確認清空":
@@ -256,9 +264,11 @@ def handle_message(event):
             )
         except Exception as e:
             print("❌ 回覆訊息錯誤:", e)
+
 @app.route("/ping", methods=["GET"])
 def ping():
     return "pong", 200
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=True)
