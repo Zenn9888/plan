@@ -135,7 +135,7 @@ def callback():
     except Exception as e:
         print("❌ Webhook Error:", e)
         abort(400)
-    return "OK"
+    return "OK",200
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
