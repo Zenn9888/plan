@@ -57,27 +57,49 @@ def verify_signature(secret, body, signature):
 # === ✅ 解析 Google Maps 短網址成地名 ===
 def resolve_place_name(input_text):
     try:
+        print(f"📥 嘗試解析：{input_text}")
+
         if input_text.startswith("http"):
-            print(f"📥 嘗試解析短網址: {input_text}")
             res = requests.get(input_text, allow_redirects=True, timeout=10)
-            final_url = res.url
-            print(f"🔁 重定向後的 URL: {final_url}")
+            url = res.url
+            print(f"🔁 重定向後 URL: {url}")
+        else:
+            url = input_text
 
-            parsed_url = urlparse(final_url)
-            if "google.com/maps" in parsed_url.netloc:
-                query = parse_qs(parsed_url.query)
-                if "q" in query:
-                    place_query = query["q"][0]
-                    print(f"✅ 抽出 q 地點: {place_query}")
-                    return place_query
+        # 1️⃣ 如果網址中有 /place/，直接擷取地名
+        place_match = re.search(r"/place/([^/]+)", url)
+        if place_match:
+            name = unquote(place_match.group(1))
+            print(f"🏷️ 擷取 /place/: {name}")
+            return name
 
-        # 若為地名或已解碼網址
-        gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["name"])
-        if gmaps_result.get("candidates"):
-            return gmaps_result["candidates"][0]["name"]
+        # 2️⃣ 如果網址中有 q=，不要直接用，改用 q 的值去查 API 取得地點名稱
+        q_match = re.search(r"[?&]q=([^&]+)", url)
+        if q_match:
+            address_text = unquote(q_match.group(1))
+            print(f"📌 擷取 ?q=: {address_text}")
+            # 查詢 Place Name
+            result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"], language="zh-TW")
+            if result.get("candidates"):
+                place_id = result["candidates"][0]["place_id"]
+                details = gmaps.place(place_id=place_id, fields=["name"], language="zh-TW")
+                name = details["result"]["name"]
+                print(f"✅ API 解析名稱：{name}")
+                return name
+
+        # 3️⃣ fallback：純地名查詢
+        result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"], language="zh-TW")
+        if result.get("candidates"):
+            place_id = result["candidates"][0]["place_id"]
+            details = gmaps.place(place_id=place_id, fields=["name"], language="zh-TW")
+            name = details["result"]["name"]
+            print(f"✅ 最終 API 名稱：{name}")
+            return name
+
     except Exception as e:
         print(f"❌ 地點解析錯誤: {e}")
     return None
+
 
 
 # === ✅ Webhook 入口 ===
