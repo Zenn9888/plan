@@ -174,6 +174,10 @@ def handle_message(event):
                 simplified_name = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", place_name)
                 if not simplified_name.strip():
                     simplified_name = place_name
+                existing = collection.find_one({"user_id": user_id, "name": simplified_name})
+                if existing:
+                    print(f"⚠️ 已存在：{simplified_name}，跳過新增")
+                    continue
                 collection.insert_one({
                     "user_id": user_id,
                     "name": simplified_name,
@@ -183,7 +187,6 @@ def handle_message(event):
             else:
                 failed.append(line)
 
-        reply = ""
         if added:
             reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added)
         if failed:
