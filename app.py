@@ -87,10 +87,20 @@ def resolve_place_name(user_input):
                 if len(parts) > 1:
                     name_part = parts[1].split("/")[0]
                     name = unquote(name_part)
-                    if re.search(CHINESE_NAME_PATTERN, name):
+# 如果是 place_id 格式，就用 API 查詢
+                    if name.startswith("Eg") or not re.search(CHINESE_NAME_PATTERN, name):
+                        logging.info(f"🔎 偵測到 place_id，嘗試使用 API 查詢：{name}")
+                        result = gmaps.place(place_id=name, fields=["name"])
+                        place = result.get("result", {})
+                        real_name = place.get("name")
+                        if real_name:
+                            logging.info(f"✅ 從 place_id 擷取名稱：{real_name}")
+                            return real_name
+                    else:
                         cleaned = clean_place_title(name)
                         logging.info(f"🏷️ 擷取地標名稱（/place/）：{cleaned}")
                         return cleaned
+
 
             # ✅ 處理 ?q=
             query = parse_qs(parsed_url.query)
