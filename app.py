@@ -60,52 +60,69 @@ def resolve_place_name(input_text):
         print(f"📥 嘗試解析：{input_text}")
 
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
         }
 
         if input_text.startswith("http"):
-            res = requests.get(input_text, headers=headers, allow_redirects=True, timeout=3)
-            url = res.url
-            print(f"🔁 重定向後 URL: {url}")
+            try:
+                res = requests.get(input_text, headers=headers, allow_redirects=True, timeout=3)
+                url = res.url
+                print(f"🔁 重定向後 URL: {url}")
 
-            # 被 Google 防機器人攔下
-            if "google.com/sorry" in url:
-                print("⚠️ 被 Google 擋下（Sorry page）")
+                if "google.com/sorry" in url:
+                    print("⚠️ 被 Google 封鎖，出現 sorry 頁面")
+                    return None
+            except requests.exceptions.RequestException as e:
+                print(f"❌ 短網址請求錯誤：{e}")
                 return None
         else:
             url = input_text
+            print(f"🔤 非網址輸入，直接使用：{url}")
 
-        # 擷取 /place/ 後的名稱
+        # 1️⃣ 嘗試擷取 /place/ 地點
         place_match = re.search(r"/place/([^/]+)", url)
         if place_match:
             name = unquote(place_match.group(1))
-            print(f"🏷️ 擷取 /place/: {name}")
+            print(f"🏷️ 成功從 /place/ 擷取名稱：{name}")
             return name
+        else:
+            print("❌ 未找到 /place/ 格式")
 
-        # 擷取 q= 後查詢真正地名
+        # 2️⃣ 嘗試解析 ?q= 地址轉換為地點名稱
         q_match = re.search(r"[?&]q=([^&]+)", url)
         if q_match:
             address_text = unquote(q_match.group(1))
-            print(f"📌 擷取 ?q=: {address_text}")
-            result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"])
-            if result.get("candidates"):
-                place_id = result["candidates"][0]["place_id"]
-                details = gmaps.place(place_id=place_id, fields=["name"])
-                name = details["result"]["name"]
-                print(f"✅ API 解析名稱：{name}")
-                return name
+            print(f"📌 擷取 ?q= 地址：{address_text}")
+            try:
+                result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"])
+                if result.get("candidates"):
+                    place_id = result["candidates"][0]["place_id"]
+                    details = gmaps.place(place_id=place_id, fields=["name"])
+                    name = details["result"]["name"]
+                    print(f"✅ 成功透過地址查詢地名：{name}")
+                    return name
+                else:
+                    print("❌ find_place (q=查詢) 無候選結果")
+            except Exception as e:
+                print(f"❌ find_place (q=查詢) 發生錯誤：{e}")
+        else:
+            print("❌ 未包含 ?q= 參數")
 
-        # fallback
+        # 3️⃣ 最後 fallback 查詢
+        print(f"📡 最終 fallback 嘗試查詢：{input_text}")
         result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
         if result.get("candidates"):
             place_id = result["candidates"][0]["place_id"]
             details = gmaps.place(place_id=place_id, fields=["name"])
             name = details["result"]["name"]
-            print(f"✅ 最終 API 名稱：{name}")
+            print(f"✅ fallback 成功取得名稱：{name}")
             return name
+        else:
+            print("❌ fallback 無法找到地點")
 
     except Exception as e:
-        print(f"❌ 錯誤：{e}")
+        print(f"❌ 總體解析錯誤：{e}")
+
     return None
 
 
