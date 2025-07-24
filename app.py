@@ -60,6 +60,11 @@ def verify_signature(secret, body, signature):
     return hmac.compare_digest(computed_signature, signature)
 
 # === ✅ 解析 Google Maps 短網址成地名 ===
+import re
+import requests
+from urllib.parse import unquote
+import googlemaps
+
 def resolve_place_name(input_text):
     try:
         print(f"📥 嘗試解析：{input_text}")
@@ -71,25 +76,28 @@ def resolve_place_name(input_text):
         else:
             url = input_text
 
-        # 1️⃣ 如果網址中有 /place/，直接擷取地名
+        # 1️⃣ 如果有 /place/ 名稱
         place_match = re.search(r"/place/([^/]+)", url)
         if place_match:
             name = unquote(place_match.group(1))
             print(f"🏷️ 擷取 /place/: {name}")
             return name
 
-        # 2️⃣ 如果網址中有 q=，擷取並簡化地點名稱（只留地標名）
+        # 2️⃣ 若網址有 ?q= 參數
         q_match = re.search(r"[?&]q=([^&]+)", url)
         if q_match:
-            address_text = unquote(q_match.group(1))
-            print(f"📌 擷取 ?q=: {address_text}")
+            q_val = unquote(q_match.group(1))
+            print(f"📌 擷取 ?q=: {q_val}")
 
-            # ✅ 精簡地標名稱（移除前面地址）
-            simplified = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", address_text)
-            print(f"🏷️ 精簡地名：{simplified}")
-            return simplified
+            # 如果是純中文地址，擷取最後的地點名稱（去除前面地址）
+            if re.search(r"[\u4e00-\u9fff]", q_val) and len(q_val) < 60:
+                simplified = re.sub(r"^.+?[市縣區鄉鎮村里道路街巷弄段號樓]", "", q_val)
+                print(f"🏷️ 精簡地名：{simplified}")
+                return simplified
+            else:
+                print("⚠️ 疑似無效的 q 值，跳過")
 
-        # 3️⃣ 最後 fallback：直接查輸入值
+        # 3️⃣ fallback 用原始文字查找
         result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
         if result.get("candidates"):
             place_id = result["candidates"][0]["place_id"]
