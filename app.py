@@ -54,32 +54,40 @@ def resolve_place_name(input_text):
         else:
             url = input_text
 
-        # 優先解析 /place/ 之後的名稱
+        # 1️⃣ 如果網址中有 /place/，直接擷取地名
         place_match = re.search(r"/place/([^/]+)", url)
         if place_match:
             name = unquote(place_match.group(1))
-            print(f"🏷️ 抽出地點名稱 /place/: {name}")
+            print(f"🏷️ 擷取 /place/: {name}")
             return name
 
-        # 解析 ?q= 參數的地點
+        # 2️⃣ 如果網址中有 q=，不要直接用，改用 q 的值去查 API 取得地點名稱
         q_match = re.search(r"[?&]q=([^&]+)", url)
         if q_match:
-            name = unquote(q_match.group(1))
-            print(f"📌 抽出地點名稱 ?q=: {name}")
-            return name
+            address_text = unquote(q_match.group(1))
+            print(f"📌 擷取 ?q=: {address_text}")
+            # 這裡才是正解：用地址查地名
+            result = gmaps.find_place(address_text, input_type="textquery", fields=["place_id"])
+            if result.get("candidates"):
+                place_id = result["candidates"][0]["place_id"]
+                details = gmaps.place(place_id=place_id, fields=["name"])
+                name = details["result"]["name"]
+                print(f"✅ API 解析名稱：{name}")
+                return name
 
-        # 最後使用 Google Maps API 查詢名稱（不是回傳 place_id）
-        gmaps_result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
-        if gmaps_result.get("candidates"):
-            place_id = gmaps_result["candidates"][0]["place_id"]
+        # 3️⃣ 最後 fallback：直接查輸入值
+        result = gmaps.find_place(input_text, input_type="textquery", fields=["place_id"])
+        if result.get("candidates"):
+            place_id = result["candidates"][0]["place_id"]
             details = gmaps.place(place_id=place_id, fields=["name"])
             name = details["result"]["name"]
-            print(f"✅ API 回傳地點名稱：{name}")
+            print(f"✅ 最終 API 名稱：{name}")
             return name
 
     except Exception as e:
-        print(f"❌ 地點解析錯誤: {e}")
+        print(f"❌ 錯誤：{e}")
     return None
+
 
 
 # === Webhook 路由 ===
