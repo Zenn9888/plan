@@ -142,14 +142,13 @@ def handle_message(event):
 
     reply = ""
 
-    # === ➕ 新增地點 ===
-    # === ➕ 新增地點 ===
-if any(alias in msg for alias in ADD_ALIASES):
-    print("✅ 進入新增地點流程")
-    raw_input = msg.split(maxsplit=1)[-1].strip()
+# === ➕ 新增地點 ===
+    if any(alias in msg for alias in ADD_ALIASES):
+        print("✅ 進入新增地點流程")
+        raw_input = msg.split(maxsplit=1)[-1].strip()
 
-    added = []
-    failed = []
+        added = []
+        failed = []
 
     for line in raw_input.splitlines():
         line = line.strip()
@@ -179,7 +178,6 @@ if any(alias in msg for alias in ADD_ALIASES):
 
     if not reply:
         reply = "⚠️ 沒有成功新增任何地點。"
-
 
     # === 📋 顯示清單（排序南到北） ===
     elif msg in ["地點", "清單"]:
