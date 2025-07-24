@@ -83,12 +83,31 @@ def resolve_place_name(user_input):
             redirect_url = resp.url
             logging.info(f"🔁 重定向後 URL: {redirect_url}")
 
-            # ✅ 防止進入 Google sorry page
+            # ✅ 如果被導向 Google 防爬蟲頁面
             if "sorry/index" in redirect_url:
-                logging.warning("⚠️ 被 Google 防爬蟲擋住（進入 CAPTCHA 驗證頁），無法解析。")
-                return "⚠️ Google 防爬蟲阻擋，無法解析地點。"
+                logging.warning("⚠️ 被 Google 防爬蟲擋住（進入 CAPTCHA 驗證頁），嘗試從 URL 解碼地點名稱")
 
-            # ✅ 如果是正式 Maps 網址，直接交給 API 查詢
+                # ✅ 嘗試從 URL 中提取 `/maps/place/xxx`
+                match = re.search(r"/maps/place/([^/]+)", redirect_url)
+                if match:
+                    encoded_name = match.group(1)
+                    decoded_name = unquote(encoded_name)
+                    logging.info(f"📦 解碼地點名稱：{decoded_name}")
+
+                    # ✅ 用 Google Maps API 查詢
+                    result = gmaps.find_place(input=decoded_name, input_type="textquery", fields=["name"])
+                    candidates = result.get("candidates")
+                    if candidates:
+                        name = candidates[0].get("name")
+                        logging.info(f"✅ fallback API 查詢成功：{name}")
+                        return name
+                    else:
+                        logging.warning("❌ fallback API 查不到地點")
+
+                # ✅ fallback 失敗提示
+                return "⚠️ Google 阻擋短網址解析，請改貼地點名稱或完整網址"
+
+            # ✅ 若 redirect 成正常網址，直接丟 API 查
             if "google.com/maps/" in redirect_url:
                 logging.info("📍 偵測為完整地圖頁面，嘗試用 API 查詢")
                 result = gmaps.find_place(input=redirect_url, input_type="textquery", fields=["name"])
@@ -101,9 +120,7 @@ def resolve_place_name(user_input):
                     logging.warning(f"❌ API 查不到地點：{redirect_url}")
                     return "⚠️ 無法從網址解析地點"
 
-            # 其他 fallback 處理略...
-
-        # ✅ 非短網址：直接查詢
+        # ✅ 非短網址時直接查詢
         logging.info(f"🔍 非 maps.app.goo.gl 網址，直接查詢：{user_input}")
         result = gmaps.find_place(input=user_input, input_type="textquery", fields=["name"])
         candidates = result.get("candidates")
@@ -115,7 +132,7 @@ def resolve_place_name(user_input):
             logging.warning(f"❌ API 查無結果：{user_input}")
 
     except Exception as e:
-        logging.warning(f"❌ 最終 fallback 查詢失敗：{user_input}\\n{e}")
+        logging.warning(f"❌ 最終 fallback 查詢失敗：{user_input}\n{e}")
 
     return "⚠️ 無法解析"
 
