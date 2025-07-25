@@ -130,35 +130,71 @@ def handle_message(event):
     reply = ""
 
     if any(alias in msg for alias in ADD_ALIASES):
+        logging.info("✅ 進入新增地點流程")
+
+        # 解析多行輸入，移除含有新增指令的那行
         lines = msg.splitlines()
         content_lines = [line for line in lines if not any(alias in line for alias in ADD_ALIASES)]
         raw_input = "\n".join(content_lines).strip()
 
         if not raw_input:
             reply = "⚠️ 請在指令後輸入地點名稱或地圖網址。"
-        else:
-            added, failed = [], []
-            for line in raw_input.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                name = resolve_place_name(line)
-                if name and not name.startswith("⚠️"):
-                    name = clean_place_title(name)
-                    if collection.find_one({"user_id": user_id, "name": name}) is None:
-                        collection.insert_one({"user_id": user_id, "name": name, "comment": None})
-                        added.append(name)
-                    else:
-                        logging.info(f"⛔️ 重複地點：{name}")
-                else:
-                    failed.append(line)
+            api_instance.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply)]
+                )
+            )
+            return
 
-            if added:
-                reply = "✅ 地點已新增：\n" + "\n".join(f"- {n}" for n in added)
-            elif failed:
-                reply = "⚠️ 無法解析以下內容：\n" + "\n".join(f"- {f}" for f in failed)
+        added = []
+        failed = []
+        duplicate = []
+
+        for line in raw_input.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            logging.info(f"🧾 處理輸入行：{line}")
+            place_name = resolve_place_name(line)
+            logging.info(f"📍 取得地點名稱：{place_name}")
+
+            if place_name and not place_name.startswith("⚠️"):
+                simplified_name = clean_place_title(place_name)
+
+                if collection.find_one({"user_id": user_id, "name": simplified_name}) is None:
+                    collection.insert_one({
+                        "user_id": user_id,
+                        "name": simplified_name,
+                        "comment": None
+                    })
+                    added.append(simplified_name)
+                else:
+                    logging.info(f"⛔️ 重複地點：{simplified_name}")
+                    duplicate.append(simplified_name)
             else:
-                reply = "⚠️ 沒有成功新增任何地點。"
+                logging.warning(f"❌ 解析失敗：{line}")
+                failed.append(line)
+
+        if added:
+            reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added) + "\n"
+        if duplicate:
+            reply += "⛔️ 重複地點（已略過）：\n" + "\n".join(f"- {name}" for name in duplicate) + "\n"
+        if failed:
+            reply += "⚠️ 無法解析以下內容：\n" + "\n".join(f"- {item}" for item in failed)
+        if not reply:
+            reply = "⚠️ 沒有成功新增任何地點。"
+
+        try:
+            api_instance.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply.strip())]
+                )
+            )
+        except Exception as e:
+            logging.warning(f"❌ 回覆訊息錯誤: {e}")
+        return
 
     elif msg in ["地點", "清單"]:
         items = list(collection.find({"user_id": user_id}))
