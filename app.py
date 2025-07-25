@@ -89,17 +89,24 @@ def handle_message(event):
     items = list(collection.find({"user_id": user_id}).sort("lat", 1))
 
     # 顯示清單
+    # 顯示清單
     if any(k in msg for k in ["清單", "地點"]):
         if not items:
             reply = "📭 尚未新增任何地點"
         else:
             lines = []
             for i, item in enumerate(items):
-                line = f"{i+1}. {item['name']}"
+                name = clean_place_title(item["name"])
+                lat, lng = item.get("lat"), item.get("lng")
+                nav_link = f"https://www.google.com/maps/dir/?api=1&destination={lat},{lng}" if lat and lng else ""
+                line = f"{i+1}. {name}"
                 if item.get("comment"):
                     line += f"（{item['comment']}）"
+                if nav_link:
+                    line += f"\n👉 [導航]({nav_link})"
                 lines.append(line)
-            reply = "📍 地點清單：\n" + "\n".join(lines)
+            reply = "📍 地點清單：\n" + "\n\n".join(lines)
+
 
     # 清空
     elif msg in ["確認清空", "確認"]:
