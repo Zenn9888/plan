@@ -242,33 +242,40 @@ def handle_message(event):
             lines = lines[1:]
 
         added, duplicate, failed = [], [], []
-        existing = list(collection.find({"user_id": user_id}).sort("lat", 1))
+        existing = list(collection.find({"user_id": user_id}))
+        existing_names = [item["name"] for item in existing]
 
         for line in lines:
             name = resolve_place_name(line)
             if not name or name.startswith("⚠️"):
                 failed.append(line)
                 continue
-            if any(name == item["name"] for item in existing):
+            if name in existing_names:
                 duplicate.append(name)
                 continue
-            geo = gmaps.geocode(name)
-            if geo:
-                lat = geo[0]["geometry"]["location"]["lat"]
-                lng = geo[0]["geometry"]["location"]["lng"]
-                collection.insert_one({
-                    "user_id": user_id,
-                    "name": name,
-                    "lat": lat,
-                    "lng": lng
-                })
-                existing.append({"name": name, "lat": lat})
-                added.append(name)
-            else:
-                failed.append(line)
 
-            existing.append({"name": name})
-            added.append(name)
+            try:
+                geo = gmaps.geocode(name)
+                if geo:
+                    lat = geo[0]["geometry"]["location"]["lat"]
+                    lng = geo[0]["geometry"]["location"]["lng"]
+                    collection.insert_one({
+                        "user_id": user_id,
+                        "name": name,
+                        "lat": lat,
+                        "lng": lng
+                    })
+                else:
+                    # 無法取得座標仍插入但不加經緯度（可依需求略過）
+                    collection.insert_one({
+                        "user_id": user_id,
+                        "name": name
+                    })
+                existing_names.append(name)
+                added.append(name)
+            except Exception as e:
+                logging.warning(f"❌ 新增地點錯誤：{e}")
+                failed.append(line)
 
         parts = []
         if added:
@@ -278,6 +285,7 @@ def handle_message(event):
         if failed:
             parts.append("⚠️ 無法解析：\n- " + "\n- ".join(failed))
         reply = "\n\n".join(parts) if parts else "⚠️ 沒有成功加入任何地點"
+
 
     # === 回覆處理 ===
     if reply:
