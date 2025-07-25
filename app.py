@@ -251,23 +251,44 @@ def handle_message(event):
         reply = "\n\n".join(parts) if parts else "⚠️ 沒有成功加入任何地點"
 
     # === 查詢天氣 ===
-    if msg.startswith("天氣"):
-        query = msg.replace("天氣", "").strip()
-        target_name = None
+    elif msg.startswith("天氣"):
+        target = msg[2:].strip()
+        district_name = None
 
-        # 若為編號（天氣 3）
-        if query.isdigit():
-            index = int(query) - 1
+    # 先從地點編號查經緯度
+        if target.isdigit():
+            index = int(target) - 1
             if 0 <= index < len(items):
-                target_name = items[index]["name"]
-            else:
-                reply = f"⚠️ 沒有編號 {query} 的地點"
+                loc = items[index]
+                lat = loc.get("lat")
+                lng = loc.get("lng")
+                if lat and lng:
+                    geo_result = gmaps.reverse_geocode((lat, lng), language="zh-TW")
+                    for comp in geo_result[0]["address_components"]:
+                        if "administrative_area_level_3" in comp["types"]:
+                            district_name = comp["long_name"]
+                            break
         else:
-            # 直接查地名
-            target_name = query
+            # 用純地名查經緯度
+            geo = gmaps.geocode(target)
+            if geo:
+                lat = geo[0]["geometry"]["location"]["lat"]
+                lng = geo[0]["geometry"]["location"]["lng"]
+                geo_result = gmaps.reverse_geocode((lat, lng), language="zh-TW")
+                for comp in geo_result[0]["address_components"]:
+                    if "administrative_area_level_3" in comp["types"]:
+                        district_name = comp["long_name"]
+                        break
 
-        if target_name:
-            reply = get_weather(target_name)
+        if not district_name:
+            reply = "⚠️ 查詢天氣失敗，請確認地點是否正確。"
+        else:
+            weather_data = get_weather_by_district(district_name)
+            if weather_data:
+                reply = weather_data
+            else:
+                reply = f"⚠️ 查無 {district_name} 的天氣資訊。"
+
 
     # 回覆訊息
     if reply:
@@ -277,6 +298,47 @@ def handle_message(event):
             )
         except Exception as e:
             logging.warning(f"❌ 回覆訊息錯誤：{e}")
+def get_weather_by_district(district_name):
+    import datetime
+    import pytz
+
+    api_key = os.getenv("CWA_API_KEY")
+    url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-091"
+    params = {
+        "Authorization": api_key,
+        "format": "JSON",
+        "locationName": district_name
+    }
+
+    try:
+        res = requests.get(url, params=params, timeout=5)
+        data = res.json()
+
+        locations = data.get("records", {}).get("locations", [])
+        if not locations:
+            return None
+
+        location = locations[0]["location"][0]
+        name = location["locationName"]
+        wx = location["weatherElement"][0]["time"]
+        min_t = location["weatherElement"][8]["time"]
+        max_t = location["weatherElement"][12]["time"]
+        pop = location["weatherElement"][1]["time"]
+
+        result = []
+        for i in range(2):  # 今明兩天白天
+            t_desc = wx[i]["elementValue"][0]["value"]
+            t_min = min_t[i]["elementValue"][0]["value"]
+            t_max = max_t[i]["elementValue"][0]["value"]
+            t_pop = pop[i]["elementValue"][0]["value"]
+            result.append(
+                f"📍 {name}\n☀️ {t_desc}　🌡️ {t_min}°C / {t_max}°C　🌧️ 降雨機率 {t_pop}%"
+            )
+        return "\n\n".join(result)
+
+    except Exception as e:
+        logging.warning(f"❌ 天氣 API 錯誤：{e}")
+        return None
 
 # ping
 @app.route("/ping", methods=["GET"])
