@@ -219,7 +219,7 @@ def handle_message(event):
                 lines.append(line)
             reply = "📍 地點清單：\n" + "\n".join(lines)
 
-    elif any(p in msg for p in COMMENT_PATTERN):
+    elif any(p in msg for p in DELETE_PATTERN):
         match = re.search(r"(\d+)", msg)
         if match:
             index = int(match.group(1)) - 1
@@ -231,8 +231,8 @@ def handle_message(event):
             else:
                 reply = "⚠️ 指定編號無效。"
 
-    elif any(keyword in msg for keyword in COMMENT_KEYWORDS):
-        match = re.match(rf"({'|'.join(COMMENT_KEYWORDS)})\s*(\d+)\s*(.+)", msg)
+    elif any(keyword in msg for keyword in COMMENT_PATTERN):
+        match = re.match(rf"({'|'.join(COMMENT_PATTERN)})\s*(\d+)\s*(.+)", msg)
         if match:
             index = int(match.group(2)) - 1
             comment = match.group(3).strip()
