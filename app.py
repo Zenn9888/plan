@@ -153,7 +153,12 @@ def handle_message(event):
                 except:
                     return 0
             items.sort(key=get_lat)
-            lines = [f"{i+1}. {item['name']}{f'（{item["comment"]}）' if item.get('comment') else ''}" for i, item in enumerate(items)]
+            lines = []
+            for i, item in enumerate(items):
+                line = f"{i+1}. {item['name']}"
+                if item.get("comment"):
+                    line += f"（{item['comment']}）"
+                lines.append(line)
             reply = "📍 地點清單：\n" + "\n".join(lines)
 
     elif any(p in msg for p in DELETE_PATTERN):
