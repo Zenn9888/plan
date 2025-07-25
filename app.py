@@ -252,7 +252,21 @@ def handle_message(event):
             if any(name == item["name"] for item in existing):
                 duplicate.append(name)
                 continue
-            collection.insert_one({"user_id": user_id, "name": name})
+            geo = gmaps.geocode(name)
+            if geo:
+                lat = geo[0]["geometry"]["location"]["lat"]
+                lng = geo[0]["geometry"]["location"]["lng"]
+                collection.insert_one({
+                    "user_id": user_id,
+                    "name": name,
+                    "lat": lat,
+                    "lng": lng
+                })
+                existing.append({"name": name, "lat": lat})
+                added.append(name)
+            else:
+                failed.append(line)
+
             existing.append({"name": name})
             added.append(name)
 
