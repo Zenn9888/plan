@@ -146,7 +146,6 @@ def handle_message(event):
             items.sort(key=get_lat)
             lines = []
             for i, item in enumerate(items):
-                name = clean_place_title(item["name"])
                 line = f"{i+1}. {item['name']}"
                 if item.get("comment"):
                     line += f"（{item['comment']}）"
