@@ -73,13 +73,22 @@ def resolve_place_name(user_input):
                         return candidates[0].get("name")
                 return "⚠️ Google 阻擋短網址解析，請改貼地點名稱或完整網址"
 
-            if "google.com/maps/" in redirect_url:
-                result = gmaps.find_place(input=redirect_url, input_type="textquery", fields=["name"], language="zh-TW")
+            if "google.com/maps/place/" in redirect_url:
+            logging.info("📍 偵測為地圖地點頁面，擷取名稱進行 API 查詢")
+            match = re.search(r"/maps/place/([^/]+)", redirect_url)
+            if match:
+                encoded_name = match.group(1)
+                decoded_name = unquote(unquote(encoded_name))
+                logging.info(f"🔤 擷取並解碼名稱：{decoded_name}")
+                result = gmaps.find_place(input=decoded_name, input_type="textquery", fields=["name"], language="zh-TW")
                 candidates = result.get("candidates")
                 if candidates:
-                    return candidates[0].get("name")
-                else:
-                    return "⚠️ 無法從網址解析地點"
+                    name = candidates[0].get("name")
+                    logging.info(f"📍 成功查詢地點名稱：{name}")
+                    return name
+            logging.warning("❌ 無法從 redirect URL 擷取名稱")
+            return "⚠️ 無法從網址解析地點"
+
 
         result = gmaps.find_place(input=user_input, input_type="textquery", fields=["name"], language="zh-TW")
         candidates = result.get("candidates")
