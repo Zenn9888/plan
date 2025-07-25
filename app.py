@@ -90,6 +90,7 @@ def resolve_place_name(user_input):
                         candidates = result.get("candidates")
                         if candidates:
                             name = candidates[0].get("name")
+                            
                             logging.info(f"📍 成功查詢地點名稱：{name}")
                             return name
                     except Exception as e:
@@ -104,6 +105,7 @@ def resolve_place_name(user_input):
         candidates = result.get("candidates")
         if candidates:
             return candidates[0].get("name")
+            
     except Exception as e:
         logging.warning(f"❌ 解析失敗：{user_input}\n{e}")
     return "⚠️ 無法解析"
@@ -144,6 +146,7 @@ def handle_message(event):
             items.sort(key=get_lat)
             lines = []
             for i, item in enumerate(items):
+                name = clean_place_title(item["name"])
                 line = f"{i+1}. {item['name']}"
                 if item.get("comment"):
                     line += f"（{item['comment']}）"
@@ -250,6 +253,7 @@ def handle_message(event):
             if not name or name.startswith("⚠️"):
                 failed.append(line)
                 continue
+            name = clean_place_title(item["name"])
             if name in existing_names:
                 duplicate.append(name)
                 continue
