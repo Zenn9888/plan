@@ -127,7 +127,8 @@ def handle_message(event):
     msg = event.message.text.strip()
     reply =""
 
-    items = list(collection.find({"user_id": user_id}))
+    items = list(collection.find({"user_id": user_id}).sort("lat", 1))
+
 
     # === 顯示清單 ===
     if any(k in msg for k in ["清單", "地點"]):
@@ -177,7 +178,7 @@ def handle_message(event):
             index = int(match.group(1)) - 1
             old_comment = match.group(2).strip()
             new_comment = match.group(3).strip()
-            items = list(collection.find({"user_id": user_id}))
+            items = list(collection.find({"user_id": user_id}).sort("lat", 1))
             if 0 <= index < len(items):
                 location = items[index]
                 comments = location.get("comment", "")
@@ -203,7 +204,7 @@ def handle_message(event):
         if match:
             index = int(match.group(2)) - 1
             new_comment = match.group(3).strip()
-            items = list(collection.find({"user_id": user_id}))
+            items = list(collection.find({"user_id": user_id}).sort("lat", 1))
             if 0 <= index < len(items):
                 location = items[index]
                 old_comment = location.get("comment", "")
@@ -241,7 +242,8 @@ def handle_message(event):
             lines = lines[1:]
 
         added, duplicate, failed = [], [], []
-        existing = list(collection.find({"user_id": user_id}))
+        existing = list(collection.find({"user_id": user_id}).sort("lat", 1))
+
         for line in lines:
             name = resolve_place_name(line)
             if not name or name.startswith("⚠️"):
