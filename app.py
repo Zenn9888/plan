@@ -80,14 +80,24 @@ def resolve_place_name(user_input):
                     encoded_name = match.group(1)
                     decoded_name = unquote(unquote(encoded_name))
                     logging.info(f"🔤 擷取並解碼名稱：{decoded_name}")
-                    esult = gmaps.find_place(input=decoded_name, input_type="textquery", fields=["name"], language="zh-TW")
-                    candidates = result.get("candidates")
-                    if candidates:
-                        name = candidates[0].get("name")
-                        logging.info(f"📍 成功查詢地點名稱：{name}")
-                        return name
-                logging.warning("❌ 無法從 redirect URL 擷取名稱")
+                    try:
+                        result = gmaps.find_place(
+                            input=decoded_name,
+                            input_type="textquery",
+                            fields=["name"],
+                            language="zh-TW"
+                        )
+                        candidates = result.get("candidates")
+                        if candidates:
+                            name = candidates[0].get("name")
+                            logging.info(f"📍 成功查詢地點名稱：{name}")
+                            return name
+                    except Exception as e:
+                        logging.warning(f"❌ 查詢 Google Maps API 失敗：{e}")
+                else:
+                    logging.warning("❌ 無法從 redirect URL 擷取名稱")
                 return "⚠️ 無法從網址解析地點"
+
 
 
         result = gmaps.find_place(input=user_input, input_type="textquery", fields=["name"], language="zh-TW")
