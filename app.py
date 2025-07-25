@@ -224,6 +224,31 @@ def handle_message(event):
                 reply = "⚠️ 無效的地點編號。"
         else:
             reply = "⚠️ 請使用格式：註解 [編號] [內容]"
+# ✅ 刪除註解：格式為「刪除註解 2 有趣」
+    elif msg.startswith("刪除註解"):
+        match = re.match(r"刪除註解\s*(\d+)\s+(.+)", msg)
+        if match:
+            index = int(match.group(1)) - 1
+            target_comment = match.group(2).strip()
+            items = list(collection.find({"user_id": user_id}).sort("lat", 1))
+            if 0 <= index < len(items):
+                location = items[index]
+                comments = location.get("comment", "")
+                comment_list = comments.split("｜") if comments else []
+                if target_comment in comment_list:
+                    comment_list.remove(target_comment)
+                    new_comment = "｜".join(comment_list) if comment_list else None
+                    collection.update_one(
+                        {"_id": location["_id"]},
+                        {"$set": {"comment": new_comment}}
+                    )
+                    reply = f"🗑️ 已刪除第 {index+1} 筆地點的註解：{target_comment}"
+                else:
+                    reply = f"⚠️ 此註解「{target_comment}」不存在於第 {index+1} 筆地點中"
+            else:
+                reply = "⚠️ 無效的地點編號。"
+        else:
+            reply = "⚠️ 請使用格式：刪除註解 [編號] [內容]"
 
     # === 幫助 ===
     elif msg.lower() in ["help", "幫助", "指令", "/", "說明"]:
@@ -234,7 +259,8 @@ def handle_message(event):
             "📝 註解 [編號] [說明]\n"
             "📋 地點 或 清單：顯示排序後地點\n"
             "❌ 清空：刪除所有地點（需再次確認）\n"
-            "📚 修改註解：[編號] [原內容] [新內容]"
+            "📚 修改註解：[編號] [原內容] [新內容]\n"
+            "🧽 刪除註解 [編號] [內容]"
         )
 
     # === 批次新增地點 ===
@@ -252,7 +278,7 @@ def handle_message(event):
             if not name or name.startswith("⚠️"):
                 failed.append(line)
                 continue
-            name = clean_place_title(item["name"])
+            name = clean_place_title("name")
             if name in existing_names:
                 duplicate.append(name)
                 continue
