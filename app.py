@@ -113,9 +113,11 @@ def resolve_place_name(user_input):
 def callback():
     signature = request.headers.get("X-Line-Signature", "")
     body = request.get_data(as_text=True)
+    logging.info(f"📩 收到請求：{body}")
     try:
         handler.handle(body, signature)
     except Exception as e:
+        logging.error(f"Webhook 錯誤：{e}")
         abort(400)
     return "OK", 200
 
@@ -123,7 +125,7 @@ def callback():
 def handle_message(event):
     user_id = event.source.user_id
     msg = event.message.text.strip()
-    reply = None
+    reply =""
 
     items = list(collection.find({"user_id": user_id}))
 
