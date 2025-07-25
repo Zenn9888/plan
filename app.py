@@ -170,27 +170,56 @@ def handle_message(event):
                 reply = "⚠️ 指定編號無效。"
 
     # === 註解地點 ===
-    elif any(keyword in msg for keyword in COMMENT_PATTERN):
-        escaped_keywords = [re.escape(k) for k in COMMENT_PATTERN]
-        match = re.match(rf"({'|'.join(escaped_keywords)})\s*(\d+)\s*(.+)", msg)
+    # ✅ 修改註解：格式為「修改註解 2 原內容 新內容」
+    if msg.startswith("修改註解"):
+        match = re.match(r"修改註解\s*(\d+)\s+(.+?)\s+(.+)", msg)
         if match:
-            index = int(match.group(2)) - 1
-            comment = match.group(3).strip()
+            index = int(match.group(1)) - 1
+            old_comment = match.group(2).strip()
+            new_comment = match.group(3).strip()
             items = list(collection.find({"user_id": user_id}))
             if 0 <= index < len(items):
-                location_id = items[index]["_id"]
-                result = collection.update_one(
-                    {"_id": location_id},
-                    {"$set": {"comment": comment}}
-                )
-                if result.modified_count == 1:
-                    reply = f"✏️ 已{'更新' if items[index].get('comment') else '新增'}註解：{items[index]['name']} → {comment}"
+                location = items[index]
+                comments = location.get("comment", "")
+                comment_list = comments.split("｜") if comments else []
+                if old_comment in comment_list:
+                    comment_list = [new_comment if c == old_comment else c for c in comment_list]
+                    collection.update_one(
+                        {"_id": location["_id"]},
+                        {"$set": {"comment": "｜".join(comment_list)}}
+                    )
+                    reply = f"🔧 已修改第 {index+1} 筆地點的註解：{old_comment} → {new_comment}"
                 else:
-                    reply = f"⚠️ 註解儲存失敗：{items[index]['name']}"
+                    reply = f"⚠️ 找不到註解「{old_comment}」，請確認內容是否正確。"
             else:
-                reply = "⚠️ 地點編號錯誤，請確認清單中的編號"
+                reply = "⚠️ 無效的地點編號。"
         else:
-            reply = "⚠️ 請使用格式：註解 [編號] [內容]，例如：註解 2 很好玩"
+            reply = "⚠️ 請使用格式：修改註解 [編號] [原內容] [新內容]"
+
+# ✅ 新增註解：格式為「註解 2 必訪景點」
+    elif any(msg.startswith(p) for p in COMMENT_PATTERN):
+        match = re.match(rf"({'|'.join(COMMENT_PATTERN)})\s*(\d+)\s+(.+)", msg)
+        if match:
+            index = int(match.group(2)) - 1
+            new_comment = match.group(3).strip()
+            items = list(collection.find({"user_id": user_id}))
+            if 0 <= index < len(items):
+                location = items[index]
+                old_comment = location.get("comment", "")
+                comment_list = old_comment.split("｜") if old_comment else []
+                if new_comment in comment_list:
+                    reply = f"⚠️ 此註解已存在於第 {index+1} 筆地點中"
+                else:
+                    comment_list.append(new_comment)
+                    collection.update_one(
+                        {"_id": location["_id"]},
+                        {"$set": {"comment": "｜".join(comment_list)}}
+                    )
+                    reply = f"📝 已為第 {index+1} 筆地點新增註解：{new_comment}"
+            else:
+                reply = "⚠️ 無效的地點編號。"
+        else:
+            reply = "⚠️ 請使用格式：註解 [編號] [內容]"
 
     # === 幫助 ===
     elif any(keyword in msg for keyword in ["help", "幫助", "指令", "/"]):
@@ -200,7 +229,8 @@ def handle_message(event):
             "🗑️ 刪除 [編號]\n"
             "📝 註解 [編號] [說明]\n"
             "📋 地點 或 清單：顯示排序後地點\n"
-            "❌ 清空：刪除所有地點（需再次確認）"
+            "❌ 清空：刪除所有地點（需再次確認）\n"
+            "📚 修改註解：[編號] [原內容] [新內容]"
         )
 
     # === 批次新增地點 ===
