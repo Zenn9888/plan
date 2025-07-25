@@ -224,7 +224,7 @@ def handle_message(event):
             reply = "⚠️ 請使用格式：註解 [編號] [內容]"
 
     # === 幫助 ===
-    elif any(keyword in msg for keyword in ["help", "幫助", "指令", "/"]):
+    elif msg.lower() in ["help", "幫助", "指令", "/", "說明"]:
         reply = (
             "📘 指令集說明：\n"
             "➕ 新增地點 [地名/地圖網址]\n"
@@ -236,7 +236,7 @@ def handle_message(event):
         )
 
     # === 批次新增地點 ===
-    elif any(keyword in msg for keyword in ADD_ALIASES):
+    elif any(msg.startswith(keyword) or msg.startswith(f"{keyword}\n") for keyword in ADD_ALIASES):
         lines = [line.strip() for line in msg.splitlines() if line.strip()]
         if any(lines[0].startswith(keyword) for keyword in ADD_ALIASES):
             lines = lines[1:]
