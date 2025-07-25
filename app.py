@@ -219,7 +219,7 @@ def handle_message(event):
                 lines.append(line)
             reply = "📍 地點清單：\n" + "\n".join(lines)
 
-    elif any(p in msg for p in DELETE_PATTERN):
+    elif any(p in msg for p in COMMENT_PATTERN):
         match = re.search(r"(\d+)", msg)
         if match:
             index = int(match.group(1)) - 1
@@ -231,26 +231,33 @@ def handle_message(event):
             else:
                 reply = "⚠️ 指定編號無效。"
 
-    elif any(p in msg for p in COMMENT_PATTERN):
-        match = re.search(r"(\d+)[\s:：]*(.+)", msg)
+    elif any(keyword in msg for keyword in COMMENT_KEYWORDS):
+        match = re.match(rf"({'|'.join(COMMENT_KEYWORDS)})\s*(\d+)\s*(.+)", msg)
         if match:
-            index = int(match.group(1)) - 1
-            comment = match.group(2)
+            index = int(match.group(2)) - 1
+            comment = match.group(3).strip()
             items = list(collection.find({"user_id": user_id}))
             if 0 <= index < len(items):
-                collection.update_one({"_id": items[index]["_id"]}, {"$set": {"comment": comment}})
-                reply = f"📝 已更新註解：{items[index]['name']} → {comment}"
+                location_id = items[index]["_id"]
+                result = collection.update_one({"_id": location_id}, {"$set": {"comment": comment}})
+                if result.modified_count == 1:
+                    reply = f"✏️ 已{'更新' if items[index].get('comment') else '新增'}註解：{items[index]['name']} → {comment}"
+                else:
+                    reply = f"⚠️ 註解儲存失敗：{items[index]['name']}"
             else:
-                reply = "⚠️ 無法註解，請確認編號正確。"
+                reply = "⚠️ 地點編號錯誤，請確認清單中的編號"
+        else:
+            reply = "⚠️ 請使用格式：註解 [編號] [內容]，例如：註解 2 很好玩"
+
 
     elif re.match(r"(清空|全部刪除|reset|清除)", msg):
-        reply = "⚠️ 是否確認清空所有地點？請輸入 `確認清空`"
+        reply = "⚠️ 是否確認清空所有地點？請輸入 `確認`"
 
-    elif msg == "確認清空":
+    elif msg == "確認":
         collection.delete_many({"user_id": user_id})
         reply = "✅ 所有地點已清空。"
 
-    elif msg in ["指令", "幫助", "help"]:
+    elif msg in ["指令", "幫助", "help", "/"]:
         reply = (
             "📘 指令集說明：\n"
             "➕ 新增地點 [地名/地圖網址]\n"
