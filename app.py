@@ -132,7 +132,6 @@ def handle_message(event):
     if any(alias in msg for alias in ADD_ALIASES):
         logging.info("✅ 進入新增地點流程")
 
-        # 解析多行輸入，移除含有新增指令的那行
         lines = msg.splitlines()
         content_lines = [line for line in lines if not any(alias in line for alias in ADD_ALIASES)]
         raw_input = "\n".join(content_lines).strip()
@@ -148,8 +147,8 @@ def handle_message(event):
             return
 
         added = []
-        failed = []
         duplicate = []
+        failed = []
 
         for line in raw_input.splitlines():
             line = line.strip()
@@ -162,38 +161,42 @@ def handle_message(event):
             if place_name and not place_name.startswith("⚠️"):
                 simplified_name = clean_place_title(place_name)
 
-                if collection.find_one({"user_id": user_id, "name": simplified_name}) is None:
-                    collection.insert_one({
-                        "user_id": user_id,
-                        "name": simplified_name,
-                        "comment": None
-                    })
-                    added.append(simplified_name)
-                else:
+                # 查詢是否已存在，避免 race condition 重複
+                existing = collection.find_one({"user_id": user_id, "name": simplified_name})
+                if existing:
                     logging.info(f"⛔️ 重複地點：{simplified_name}")
                     duplicate.append(simplified_name)
+                    continue
+
+                result = collection.insert_one({
+                    "user_id": user_id,
+                    "name": simplified_name,
+                    "comment": None
+                })
+
+                if result.inserted_id:
+                    added.append(simplified_name)
+                else:
+                    failed.append(line)
             else:
-                logging.warning(f"❌ 解析失敗：{line}")
                 failed.append(line)
 
         if added:
-            reply += "✅ 地點已新增：\n" + "\n".join(f"- {name}" for name in added) + "\n"
+            reply += "✅ 成功新增：\n" + "\n".join(f"- {name}" for name in added) + "\n"
         if duplicate:
             reply += "⛔️ 重複地點（已略過）：\n" + "\n".join(f"- {name}" for name in duplicate) + "\n"
         if failed:
-            reply += "⚠️ 無法解析以下內容：\n" + "\n".join(f"- {item}" for item in failed)
-        if not reply:
+            reply += "⚠️ 解析失敗（請確認格式）：\n" + "\n".join(f"- {item}" for item in failed)
+
+        if not (added or duplicate or failed):
             reply = "⚠️ 沒有成功新增任何地點。"
 
-        try:
-            api_instance.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=reply.strip())]
-                )
+        api_instance.reply_message(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=reply.strip())]
             )
-        except Exception as e:
-            logging.warning(f"❌ 回覆訊息錯誤: {e}")
+        )
         return
 
     elif msg in ["地點", "清單"]:
