@@ -169,13 +169,17 @@ def handle_message(event):
 
     # === 註解地點 ===
     elif any(keyword in msg for keyword in COMMENT_PATTERN):
-        match = re.match(rf"({'|'.join(COMMENT_PATTERN)})\\s*(\\d+)\\s*(.+)", msg)
+        match = re.match(rf"({'|'.join(COMMENT_PATTERN)})\s*(\d+)\s*(.+)", msg)
         if match:
             index = int(match.group(2)) - 1
             comment = match.group(3).strip()
+            items = list(collection.find({"user_id": user_id}))
             if 0 <= index < len(items):
                 location_id = items[index]["_id"]
-                result = collection.update_one({"_id": location_id}, {"$set": {"comment": comment}})
+                result = collection.update_one(
+                    {"_id": location_id},
+                    {"$set": {"comment": comment}}
+                )
                 if result.modified_count == 1:
                     reply = f"✏️ 已{'更新' if items[index].get('comment') else '新增'}註解：{items[index]['name']} → {comment}"
                 else:
