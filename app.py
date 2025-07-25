@@ -5,7 +5,9 @@ from dotenv import load_dotenv
 from flask import Flask, request, abort
 from pymongo import MongoClient
 import googlemaps
-
+import datetime
+import pytz
+import urllib.parse
 from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import (
     MessagingApi, Configuration, ApiClient, ReplyMessageRequest
@@ -22,6 +24,7 @@ CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 MONGO_URL = os.getenv("MONGO_URL")
+CWB_API_KEY = os.getenv("CWB_API_KEY")
 
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 client = MongoClient(MONGO_URL)
@@ -65,6 +68,30 @@ def resolve_place_name(user_input):
     except Exception as e:
         logging.warning(f"❌ 解析失敗：{e}")
     return "⚠️ 無法解析"
+def get_weather(location_name):
+    try:
+        encoded_location = urllib.parse.quote(location_name)
+        url = f"https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001?Authorization={CWB_API_KEY}&locationName={encoded_location}"
+        res = requests.get(url).json()
+        location = res["records"]["location"][0]
+
+        name = location["locationName"]
+        elements = {e["elementName"]: e["time"] for e in location["weatherElement"]}
+
+        def format_weather(index):
+            wx = elements["Wx"][index]["parameter"]["parameterName"]
+            pop = elements["PoP"][index]["parameter"]["parameterName"]
+            min_t = elements["MinT"][index]["parameter"]["parameterName"]
+            max_t = elements["MaxT"][index]["parameter"]["parameterName"]
+            return f"📍 {name}\n☀️ {wx}　🌡️ {min_t}°C / {max_t}°C　🌧️ 降雨機率 {pop}%"
+
+        today = format_weather(0)
+        tomorrow = format_weather(2) if len(elements["Wx"]) > 2 else None
+
+        return f"{today}\n\n{tomorrow}" if tomorrow else today
+    except Exception as e:
+        logging.warning(f"❌ 天氣查詢失敗：{e}")
+        return "⚠️ 查詢天氣失敗，請確認地名是否正確。"
 
 # === Webhook 路由 ===
 @app.route("/callback", methods=["POST"])
@@ -222,6 +249,25 @@ def handle_message(event):
         if duplicate: parts.append("⛔️ 重複地點（已略過）：\n- " + "\n- ".join(duplicate))
         if failed: parts.append("⚠️ 無法解析：\n- " + "\n- ".join(failed))
         reply = "\n\n".join(parts) if parts else "⚠️ 沒有成功加入任何地點"
+
+    # === 查詢天氣 ===
+    if msg.startswith("天氣"):
+        query = msg.replace("天氣", "").strip()
+        target_name = None
+
+        # 若為編號（天氣 3）
+        if query.isdigit():
+            index = int(query) - 1
+            if 0 <= index < len(items):
+                target_name = items[index]["name"]
+            else:
+                reply = f"⚠️ 沒有編號 {query} 的地點"
+        else:
+            # 直接查地名
+            target_name = query
+
+        if target_name:
+            reply = get_weather(target_name)
 
     # 回覆訊息
     if reply:
