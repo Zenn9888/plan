@@ -198,7 +198,8 @@ def handle_message(event):
 
 # ✅ 新增註解：格式為「註解 2 必訪景點」
     elif any(msg.startswith(p) for p in COMMENT_PATTERN):
-        match = re.match(rf"({'|'.join(COMMENT_PATTERN)})\s*(\d+)\s+(.+)", msg)
+        pattern = rf"({'|'.join(re.escape(p) for p in COMMENT_PATTERN)})\s*(\d+)\s+(.+)"
+        match = re.match(pattern, msg)
         if match:
             index = int(match.group(2)) - 1
             new_comment = match.group(3).strip()
