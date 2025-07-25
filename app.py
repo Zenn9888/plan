@@ -171,7 +171,8 @@ def handle_message(event):
 
     # === 註解地點 ===
     elif any(keyword in msg for keyword in COMMENT_PATTERN):
-        match = re.match(rf"({'|'.join(COMMENT_PATTERN)})\s*(\d+)\s*(.+)", msg)
+        escaped_keywords = [re.escape(k) for k in COMMENT_PATTERN]
+        match = re.match(rf"({'|'.join(escaped_keywords)})\s*(\d+)\s*(.+)", msg)
         if match:
             index = int(match.group(2)) - 1
             comment = match.group(3).strip()
