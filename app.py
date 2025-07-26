@@ -25,7 +25,7 @@ CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 GOOGLE_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
 MONGO_URL = os.getenv("MONGO_URL")
 CWB_API_KEY = os.getenv("CWB_API_KEY")
-
+logging.info(f"✅ CWB_API_KEY 讀到：{CWB_API_KEY}")
 gmaps = googlemaps.Client(key=GOOGLE_API_KEY)
 client = MongoClient(MONGO_URL)
 db = client["line_bot_db"]
