@@ -361,7 +361,15 @@ def get_weather_by_district(district_name):
         }
 
         res = requests.get(url, params=params, timeout=5)
-        data = res.json()
+        logging.debug(f"🌐 [F-D0047-091 回傳內容] {res.text[:100]}")  # 顯示前 100 字預覽
+
+        try:
+            data = res.json()
+        except Exception as e:
+            logging.error(f"❌ JSON 解碼失敗：{e}")
+            logging.warning(f"⚠️ 原始回傳：{res.text}")
+            return None
+
         locations = data.get("records", {}).get("locations", [])
         if not locations:
             return None
@@ -388,6 +396,7 @@ def get_weather_by_district(district_name):
         logging.warning(f"❌ 天氣 API 錯誤：{e}")
         return None
 
+
 def get_rain_temp_1hr_by_location(district_name):
     """查詢 1 小時降雨機率與即時溫度（F-D0047-093）"""
     try:
@@ -396,12 +405,21 @@ def get_rain_temp_1hr_by_location(district_name):
             "Authorization": CWB_API_KEY,
             "locationName": district_name
         }, timeout=5)
-        data = res.json()
+
+        logging.debug(f"🌐 [F-D0047-093 回傳內容] {res.text[:100]}")  # 顯示預覽
+
+        try:
+            data = res.json()
+        except Exception as e:
+            logging.error(f"❌ JSON 解碼失敗：{e}")
+            logging.warning(f"⚠️ 原始回傳：{res.text}")
+            return None, None
+
         locations = data.get("records", {}).get("locations", [])
         if not locations:
             return None, None
-        location = locations[0]["location"][0]
 
+        location = locations[0]["location"][0]
         rain = location["weatherElement"][0]["time"][0]["elementValue"][0]["value"]  # 降雨機率
         temp = location["weatherElement"][1]["time"][0]["elementValue"][0]["value"]  # 溫度 T
 
@@ -409,6 +427,7 @@ def get_rain_temp_1hr_by_location(district_name):
     except Exception as e:
         logging.warning(f"❌ 1 小時天氣查詢錯誤：{e}")
         return None, None
+
 
 
 
