@@ -273,6 +273,33 @@ def handle_message(event):
 
                         # 優先使用鄉鎮區，再 fallback 到縣市（level 2）
                         district_name = town_name or area_name
+                        # 自訂 fallback 對照（可擴充）
+                        fallback_map = {
+                            "復興里": "台東市",
+                            "興國里": "台東市",
+                            "中正里": "台東市",
+                            "中華里": "台東市",
+                            "民生里": "台東市",
+                            "明峰村": "卑南鄉",
+                            "永安村": "鹿野鄉",
+                            "萬安村": "池上鄉",
+                            "都蘭村": "東河鄉",
+                            "鹽寮村": "壽豐鄉",
+                            "民治里": "花蓮市",
+                            "主信里": "花蓮市",
+                            "主工里": "花蓮市",
+                            "主睦里": "花蓮市",
+                            "國風里": "花蓮市",
+                            "國安里": "花蓮市",
+                            "國光里": "花蓮市",
+                            "民孝里": "花蓮市",
+                            "大漢村": "新城鄉",
+                            "康樂村": "壽豐鄉"
+                        }
+
+# 若目前 district_name 是錯的細分名，則使用對照表修正
+                        if district_name in fallback_map:
+                            district_name = fallback_map[district_name]
 
                         if not district_name:
                             weather_list.append(f"⚠️ {i+1}. {loc['name']} 查無行政區")
