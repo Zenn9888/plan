@@ -403,6 +403,7 @@ def get_rain_temp_1hr_by_location(district_name):
         url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-D0047-093"
         res = requests.get(url, params={
             "Authorization": CWB_API_KEY,
+            "format": "JSON",
             "locationName": district_name
         }, timeout=5)
 
