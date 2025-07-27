@@ -326,10 +326,10 @@ def handle_message(event):
                         forecast = get_weather_by_district(district_name)
                         if forecast:
                             weather_list.append(
-                                f"📌 {i+1}. {title}（{district_name}）\n{rain_1hr_txt}　{temp_txt}\n{forecast}"
+                                f"📌 {i+1}. {title}（{district_name}）\n🔍 使用行政區：{district_name}\n{rain_1hr_txt}　{temp_txt}\n{forecast}"
                             )
                         else:
-                            weather_list.append(f"⚠️ {i+1}. {title}（{district_name}） 查無天氣預報")
+                            f"⚠️ {i+1}. {title}（{district_name}） 查無天氣預報\n🔍 使用行政區：{district_name}"
 
                     except Exception as e:
                         logging.warning(f"❌ 天氣查詢錯誤：{e}")
